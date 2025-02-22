@@ -12,5 +12,5 @@ const patterns = {
 
 const DEBUG = patterns[environmentVariables.NODE_ENV];
 
-export const enableHello = () => debug.enable(DEBUG);
+export const sayHello = () => debug.enable(DEBUG);
 export const hello = helloInnit(ns, env);

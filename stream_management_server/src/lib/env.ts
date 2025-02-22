@@ -2,11 +2,13 @@ import { envar, parseEnvInt } from "../util/envar";
 
 export const env = envar([
   ["MQTT_BROKER_URI", { required: true }],
+  ["MQTT_BROKER_USER", { required: true }],
+  ["MQTT_BROKER_PASS", { required: true }],
   ["MEMGRAPH_URI", { required: true }],
   ["MEMGRAPH_USER", { required: true }],
   ["MEMGRAPH_PASS", { required: true }],
   ["MEMGRAPH_DB_NAME", { required: true }],
-  ["PORT", { parser: parseEnvInt }],
+  ["PORT", { parser: parseEnvInt, default: 4000, required: true }],
   [
     "NODE_ENV",
     {
