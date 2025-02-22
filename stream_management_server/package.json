@@ -1,0 +1,17 @@
+{
+  "name": "stream_management_server",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/debug": "^4.1.12",
+    "debug": "^4.4.0",
+    "mqtt": "^5.10.3",
+    "neo4j-driver": "^5.28.1"
+  }
+}
