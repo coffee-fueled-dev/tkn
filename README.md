@@ -62,7 +62,66 @@ The Pusher is a writable stream that:
 
 1. **Clone the repository:**
 
-   ```bash
-   git clone https://github.com/yourusername/tkn.git
-   cd tkn
-   ```
+```bash
+git clone https://github.com/yourusername/tkn.git
+cd tkn
+```
+
+2. **Install dependencies:**
+
+Ensure you have Bun.js installed, then run:
+
+```bash
+bun install
+```
+
+3. **Set up Neo4j:**
+   - Install and run a Neo4j instance.
+   - Configure the connection in your project (typically via environment variables or a configuration file).
+
+## Usage
+
+### Starting the Server
+
+Run the following command to start the TCP server:
+
+```bash
+bun start
+```
+
+By default, the server will listen on port 5000. You can change the port by modifying the startServer function parameters or by setting an environment variable if you implement that in your configuration.
+
+### Authentication
+
+The first message sent by a client must be an authentication token. In the current implementation, the token is validated against a hardcoded value ("valid_token"). Make sure to update this logic with your actual token validation mechanism for production use.
+
+Example client connection using netcat:
+
+```bash
+echo "valid_token" | nc localhost 5000
+```
+
+### Configuration
+
+- Port: Change the server port in the startServer function (default: 5000).
+- Authentication: Replace the token validation logic with your custom implementation.
+- Neo4j Connection: Update the Neo4j driver configuration in ../lib/clients to match your database credentials and connection details.
+
+### Graceful Shutdown
+
+The server listens for SIGINT and SIGTERM signals. Upon receiving a shutdown signal, it:
+
+- Stops accepting new connections.
+- Closes the Neo4j driver.
+- Gracefully ends active client connections.
+- Forces any lingering connections to close after a 5-second timeout.
+
+## Contributing
+
+Contributions are welcome! If you have any suggestions, bug reports, or improvements, please open an issue or submit a pull request on GitHub.
+
+## License
+
+This project is licensed under the MIT License.
+
+TKN provides a robust framework for pattern mining in a streaming environment, making it an excellent choice for real-time data analysis applications. Enjoy exploring and extending its functionality!
