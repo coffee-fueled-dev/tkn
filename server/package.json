@@ -1,5 +1,5 @@
 {
-  "name": "stream_management_server",
+  "name": "server",
   "module": "src/index.ts",
   "type": "module",
   "devDependencies": {

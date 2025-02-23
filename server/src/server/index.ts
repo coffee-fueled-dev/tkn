@@ -4,8 +4,6 @@ import { Observer } from "./observer";
 import { Pusher } from "./pusher";
 import { neo4jDriver } from "../lib/clients";
 
-sayHello();
-
 /**
  * Starts a TCP Server on the specified port.
  * The first message from a client must be an authentication token.
@@ -15,6 +13,7 @@ sayHello();
  * @returns An object containing the server instance and a shutdown function.
  */
 export function startServer(port: number = 5000): Server {
+  sayHello();
   // Set to track active client connections
   const activeConnections = new Set<Socket>();
 
