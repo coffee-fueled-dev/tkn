@@ -1,12 +1,13 @@
 import net, { Socket, Server } from "net";
 import { hello, sayHello } from "../lib/logs";
-import { driver } from "../lib/clients";
-import { StreamHandler } from "./stream-handler";
+import { Observer } from "./observer";
+import { Pusher } from "./pusher";
+import { neo4jDriver } from "../lib/clients";
 
 sayHello();
 
 /**
- * Starts a TCP gateway server on the specified port.
+ * Starts a TCP Server on the specified port.
  * The first message from a client must be an authentication token.
  * Once authenticated, subsequent data is forwarded to a dedicated StreamHandler.
  *
@@ -18,24 +19,24 @@ export function startServer(port: number = 5000): Server {
   const activeConnections = new Set<Socket>();
 
   const server: Server = net.createServer((clientSocket: Socket) => {
-    hello.gateway.info(
+    hello.server.info(
       `New client connected from ${clientSocket.remoteAddress}`
     );
     activeConnections.add(clientSocket);
 
     clientSocket.on("close", () => {
       activeConnections.delete(clientSocket);
-      hello.gateway.info(`Client disconnected: ${clientSocket.remoteAddress}`);
+      hello.server.info(`Client disconnected: ${clientSocket.remoteAddress}`);
     });
 
     // Validate connection using the first data received (authentication token)
     clientSocket.once("data", (data: Buffer) => {
       const token = data.toString().trim();
-      hello.gateway.info(`Received token: ${token}`);
+      hello.server.info(`Received token: ${token}`);
 
       // Replace this with your actual token validation logic.
       if (token !== "valid_token") {
-        hello.gateway.warn(
+        hello.server.warn(
           `Unauthorized connection attempt with token: ${token}`
         );
         clientSocket.write("AUTH FAIL\n");
@@ -43,39 +44,33 @@ export function startServer(port: number = 5000): Server {
         return;
       }
 
-      // On successful authentication, assign a dedicated StreamHandler
-      const handler = new StreamHandler(driver);
+      // On successful authentication, assign a dedicated Observer and Pusher
+      const observer = new Observer();
+      const pusher = new Pusher(token, neo4jDriver);
 
-      // Now, process subsequent data without further ACL checks.
-      clientSocket.on("data", (chunk: Buffer) => {
-        const message = chunk.toString();
-        hello.gateway.debug(`Processing data: ${message}`);
-
-        handler.enqueueTask(chunk);
-      });
+      clientSocket.pipe(observer);
+      observer.pipe(pusher);
     });
 
     clientSocket.on("error", (err: Error) => {
-      hello.gateway.error(`Socket error: ${err.message}`);
+      hello.server.error("Socket error: ", err);
     });
   });
 
   server.on("error", (err: Error) => {
-    hello.gateway.error(`Server error: ${err.message}`);
+    hello.server.error("Server error: ", err);
   });
 
   server.listen(port, () => {
-    hello.gateway.info(`Gateway server listening on port ${port}`);
+    hello.server.info(`Server listening on port ${port}`);
   });
 
   // Graceful shutdown function
   function shutdown(): void {
-    hello.gateway.warn("Initiating graceful shutdown of gateway server...");
+    hello.server.warn("Initiating graceful shutdown of Server...");
     // Stop accepting new connections.
     server.close(() => {
-      hello.gateway.info(
-        "Gateway server has stopped accepting new connections."
-      );
+      hello.server.info("Server has stopped accepting new connections.");
     });
     // Close all active connections gracefully.
     for (const socket of activeConnections) {
@@ -86,7 +81,7 @@ export function startServer(port: number = 5000): Server {
       for (const socket of activeConnections) {
         socket.destroy();
       }
-      hello.gateway.info("All connections closed.");
+      hello.server.info("All connections closed.");
     }, 5000);
   }
 
