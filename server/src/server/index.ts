@@ -72,6 +72,10 @@ export function startServer(port: number = 5000): Server {
     server.close(() => {
       hello.server.info("Server has stopped accepting new connections.");
     });
+
+    // Close the neo4j driver
+    neo4jDriver.close();
+
     // Close all active connections gracefully.
     for (const socket of activeConnections) {
       socket.end("Server is shutting down...\n");
