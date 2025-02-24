@@ -1,6 +1,4 @@
-import { startServer } from "./server";
+import { TknServer } from "./server";
 import { env } from "./lib/env";
 
-const { PORT } = env;
-
-startServer(PORT);
+new TknServer(env.PORT);
