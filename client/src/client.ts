@@ -9,7 +9,6 @@ import {
   TYPE_BINARY,
   TYPE_BATCH,
   encodeMessage,
-  padData,
   type TknBatchItem,
 } from "./common";
 
@@ -117,46 +116,34 @@ export abstract class TknClientBase {
   /**
    * Send JSON data to the server
    */
-  public sendJson(data: object, pad: boolean = false): boolean {
-    const finalData = pad ? padData(data) : data;
-    return this.sendRaw(TYPE_JSON, finalData);
+  public sendJson(data: object): boolean {
+    return this.sendRaw(TYPE_JSON, data);
   }
 
   /**
    * Send string data to the server
    */
-  public sendString(data: string, pad: boolean = false): boolean {
-    const finalData = pad ? (padData(data) as string) : data;
-    return this.sendRaw(TYPE_STRING, finalData);
+  public sendString(data: string): boolean {
+    return this.sendRaw(TYPE_STRING, data);
   }
 
   /**
    * Send binary data to the server
    */
-  public sendBinary(data: Uint8Array, pad: boolean = false): boolean {
-    const finalData = pad ? (padData(data) as Uint8Array) : data;
-    return this.sendRaw(TYPE_BINARY, finalData);
+  public sendBinary(data: Uint8Array): boolean {
+    return this.sendRaw(TYPE_BINARY, data);
   }
 
   /**
    * Send a batch of mixed data types to the server
    *
    * @param items Array of items with their types
-   * @param pad Whether to pad each item (if needed for mining)
    */
-  public sendBatch(
-    items: { type: TknMessageType; data: TknData }[],
-    pad: boolean = false
-  ): boolean {
+  public sendBatch(items: { type: TknMessageType; data: TknData }[]): boolean {
     // Don't allow nested batches
     for (const item of items) {
       if (item.type === TYPE_BATCH) {
         throw new Error("Nested batches are not supported");
-      }
-
-      // Apply padding if requested
-      if (pad) {
-        item.data = padData(item.data);
       }
     }
 

@@ -74,11 +74,12 @@ export const TknServer = () => {
         sayHello();
         hello.server.debug("New connection");
         const sessionId = randomUUIDv7();
+        const symbolTable = new SymbolTable();
         socket.data = {
           sessionId,
           tknMiner: new TknMiner(),
-          syncStream: new SyncStream(sessionId, neo4jDriver),
-          symbolTable: new SymbolTable(),
+          syncStream: new SyncStream(sessionId, neo4jDriver, symbolTable),
+          symbolTable,
           buffer: new Uint8Array(8192), // Initial 8K buffer
           bufferSize: 0,
         };

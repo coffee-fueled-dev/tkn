@@ -10,7 +10,6 @@ export {
   TYPE_STRING,
   TYPE_BINARY,
   encodeMessage,
-  padData,
 } from "./common";
 
 export type { TknMessageType, TknData, TknClientOptionsBase } from "./common";
