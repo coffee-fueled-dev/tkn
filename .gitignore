@@ -1,6 +1,6 @@
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
-stream-demo/src/test_files/*
+client/examples/test_files/*
 
 # Logs
 

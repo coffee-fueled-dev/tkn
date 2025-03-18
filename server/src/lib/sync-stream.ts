@@ -5,9 +5,9 @@
 
 import { randomUUIDv7 } from "bun";
 import { Driver } from "neo4j-driver";
-import { hello, sayHello } from "../lib/logs";
-import type { OutputToken } from "../lib/observer";
-import type { HashedValue } from "../lib/symbol-table";
+import { hello, sayHello } from "./logs";
+import type { OutputToken } from "./tkn-miner";
+import type { HashedValue } from "./symbol-table";
 import { recordOperation } from "./throughput-monitor";
 
 export class SyncStream {
@@ -22,7 +22,7 @@ export class SyncStream {
     this.tenantId = tenantId;
     this.driver = driver;
     hello.syncStream.info(
-      `Pusher initialized for tenant ${this.tenantId} with sessionId ${this.sessionId}`
+      `SyncStream initialized for tenant ${this.tenantId} with sessionId ${this.sessionId}`
     );
   }
 

@@ -1,127 +1,258 @@
-# TKN
+# TKN Protocol
 
-TKN is an online pattern-mining project that exposes a powerful algorithm over a TCP interface. It leverages a real-time data processing pipeline to analyze and extract patterns from incoming data streams, and then persists the relationships between patterns in a Neo4j database. This project is designed to be robust, scalable, and easy to integrate into your existing infrastructure.
+This repository contains the TKN (Token) server and client implementation, which uses a lightweight binary protocol for efficient communication.
 
-## Table of Contents
+## Protocol Overview
 
-- [Features](#features)
-- [Architecture](#architecture)
-  - [Server](#server)
-  - [Observer (Core Algorithm)](#observer-core-algorithm)
-  - [Pusher (Database Syncing)](#pusher-database-syncing)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Starting the Server](#starting-the-server)
-  - [Authentication](#authentication)
-- [Configuration](#configuration)
-- [Graceful Shutdown](#graceful-shutdown)
-- [Contributing](#contributing)
-- [License](#license)
+The TKN protocol is a simple binary protocol with the following format:
 
-## Features
-
-- **Online Pattern Mining:** Processes streaming data to extract and update patterns in real time.
-- **TCP Interface:** Exposes a simple TCP server for easy integration.
-- **Modular Design:** Uses a dedicated Observer for pattern mining and a Pusher for syncing tokens to a Neo4j database.
-- **Real-Time Authentication:** Ensures secure connections with token-based authentication.
-- **Graceful Shutdown:** Handles system signals to close connections and shutdown the server cleanly.
-- **Logging:** Provides detailed logging for each step in the data pipeline for easier debugging and monitoring.
-
-## Architecture
-
-### Server
-
-The TCP server is the entry point for client connections. It:
-
-- Listens on a configurable port (default: 5000).
-- Requires the first message from each client to be an authentication token.
-- On successful authentication, it creates a dedicated processing pipeline for that connection using the Observer and Pusher components.
-- Tracks active client connections and supports graceful shutdown.
-
-### Observer (Core Algorithm)
-
-The Observer is a custom stream transformer that:
-
-- Reads incoming data as a series of bytes.
-- Maintains a sliding window to build tokens.
-- Computes pattern tokens and tracks them using a simple lifespan-based mechanism.
-- Emits tokens downstream for further processing.
-- Provides methods to inspect the current window and token bank, which are useful for debugging and testing.
-
-### Pusher (Database Syncing)
-
-The Pusher is a writable stream that:
-
-- Buffers tokens received from the Observer.
-- Processes tokens in batches.
-- Creates or merges token nodes in a Neo4j database.
-- Establishes relationships between token pairs to reflect the discovered pattern sequences.
-- Uses a dedicated Neo4j session and transaction handling to ensure consistency and handle errors gracefully.
-
-## Installation
-
-1. **Clone the repository:**
-
-```bash
-git clone https://github.com/yourusername/tkn.git
-cd tkn
+```
++------+----------------+-----------------------+
+| Type | Length (4byte) | Payload (variable)    |
++------+----------------+-----------------------+
+   1B        4B             Length bytes
 ```
 
-2. **Install dependencies:**
+### Message Types
 
-Ensure you have Bun.js installed, then run:
+- `1`: JSON data
+- `2`: String data
+- `3`: Binary data
+- `4`: Batch data (contains multiple messages of other types)
 
-```bash
-bun install
+### Length Field
+
+The length field is a 4-byte big-endian integer that specifies the length of the payload in bytes.
+
+### Batch Message Format
+
+When sending a batch (type `4`), the payload contains multiple items, each with its own type and length:
+
+```
++------+----------------+--------------+--------------+...+--------------+--------------+
+| Type | Total Length   | Item1 Type   | Item1 Length | ...| ItemN Type   | ItemN Length |
++------+----------------+--------------+--------------+...+--------------+--------------+
+| Item1 Payload         | ... | ItemN Payload         |
++------------------------+...+------------------------+
 ```
 
-3. **Set up Neo4j:**
-   - Install and run a Neo4j instance.
-   - Configure the connection in your project (typically via environment variables or a configuration file).
+This allows sending multiple messages of different types in a single packet, reducing network overhead.
 
-## Usage
+## Server
 
-### Starting the Server
+The server processes incoming messages according to the protocol, parses them based on the message type, and then processes them through the token mining system.
 
-Run the following command to start the TCP server:
+### Running the Server
 
 ```bash
-bun start
+bun run server/src/index.ts
 ```
 
-By default, the server will listen on port 5000. You can change the port by modifying the startServer function parameters or by setting an environment variable if you implement that in your configuration.
+## TKN Client Library
 
-### Authentication
+A lightweight client library is included for easy communication with the TKN server:
 
-The first message sent by a client must be an authentication token. In the current implementation, the token is validated against a hardcoded value ("valid_token"). Make sure to update this logic with your actual token validation mechanism for production use.
+- `lib/tkn-client.ts`: Node.js/Bun client library
+- `lib/tkn-browser-client.ts`: Browser-compatible client using WebSockets
 
-Example client connection using netcat:
+### Using the Node.js Client
+
+```typescript
+import { TknClient } from "./lib/tkn-client";
+
+// Create a client
+const client = new TknClient({
+  host: "localhost",
+  port: 8080,
+  onConnect: (client) => {
+    console.log("Connected to TKN server!");
+
+    // Send JSON data
+    client.sendJson({ type: "sensor", values: [42, 17, 23, 84] }, true);
+
+    // Send string data
+    client.sendString("Hello from TKN client!", true);
+
+    // Send binary data
+    client.sendBinary(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), true);
+
+    // Send batch data (combining multiple message types)
+    client.sendBatch(
+      [
+        {
+          type: 1, // JSON
+          data: { type: "sensor", values: [42, 17, 23, 84] },
+        },
+        {
+          type: 2, // String
+          data: "Log message from batch",
+        },
+        {
+          type: 3, // Binary
+          data: new Uint8Array([1, 2, 3, 4, 5]),
+        },
+      ],
+      true
+    );
+  },
+});
+
+// Connect to the server
+client.connect();
+```
+
+### Using the Browser Client
+
+```html
+<script type="module">
+  import { TknBrowserClient } from "./lib/tkn-browser-client.js";
+
+  const client = new TknBrowserClient({
+    url: "ws://localhost:8080",
+    onConnect: (client) => {
+      console.log("Connected to TKN server!");
+
+      // Send JSON data
+      client.sendJson({ type: "sensor", values: [42, 17, 23, 84] }, true);
+
+      // Send a batch of mixed data
+      client.sendBatch(
+        [
+          { type: 1, data: { event: "login", user: "user123" } },
+          { type: 2, data: "System initialized" },
+        ],
+        true
+      );
+    },
+  });
+
+  client.connect();
+</script>
+```
+
+### Client API
+
+Both client libraries share a similar API:
+
+- `connect()`: Connect to the TKN server
+- `disconnect()`: Close the connection
+- `sendJson(data, pad)`: Send JSON data
+- `sendString(data, pad)`: Send string data
+- `sendBinary(data, pad)`: Send binary data
+- `sendBatch(items, pad)`: Send multiple items of different types in a single message
+- `isConnected()`: Check connection status
+
+The `pad` parameter (boolean) adds padding to ensure data meets minimum size requirements.
+
+## Example Client
+
+An example client is provided in `client-example.ts`. It demonstrates how to connect to the server and send different types of data using the protocol.
+
+### Running the Client
 
 ```bash
-echo "valid_token" | nc localhost 5000
+bun run client-example.ts
 ```
 
-### Configuration
+More comprehensive examples are available in:
 
-- Port: Change the server port in the startServer function (default: 5000).
-- Authentication: Replace the token validation logic with your custom implementation.
-- Neo4j Connection: Update the Neo4j driver configuration in ../lib/clients to match your database credentials and connection details.
+- `examples/tkn-client-demo.ts`: Node.js client example
+- `examples/browser-example.html`: Browser client example
 
-### Graceful Shutdown
+### Running the Examples
 
-The server listens for SIGINT and SIGTERM signals. Upon receiving a shutdown signal, it:
+```bash
+bun run examples/tkn-client-demo.ts
+```
 
-- Stops accepting new connections.
-- Closes the Neo4j driver.
-- Gracefully ends active client connections.
-- Forces any lingering connections to close after a 5-second timeout.
+For the browser example, serve the HTML file and access it in your browser.
 
-## Contributing
+## Usage Examples
 
-Contributions are welcome! If you have any suggestions, bug reports, or improvements, please open an issue or submit a pull request on GitHub.
+### Sending JSON Data
 
-## License
+```typescript
+// JSON object
+const jsonData = {
+  type: "sensor",
+  values: [42, 17, 23, 84],
+  timestamp: Date.now(),
+};
+socket.write(encodeMessage(TYPE_JSON, jsonData));
+```
 
-This project is licensed under the MIT License.
+### Sending String Data
 
-TKN provides a robust framework for pattern mining in a streaming environment, making it an excellent choice for real-time data analysis applications. Enjoy exploring and extending its functionality!
+```typescript
+// String data
+socket.write(encodeMessage(TYPE_STRING, "Hello from TKN client!"));
+```
+
+### Sending Binary Data
+
+```typescript
+// Binary data
+const binaryData = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+socket.write(encodeMessage(TYPE_BINARY, binaryData));
+```
+
+### Sending Batch Data
+
+```typescript
+// Batch data (multiple items of different types)
+const batchItems = [
+  { type: TYPE_JSON, data: { event: "measurement", value: 42 } },
+  { type: TYPE_STRING, data: "System log entry" },
+  { type: TYPE_BINARY, data: new Uint8Array([0, 1, 2, 3, 4]) },
+];
+socket.write(encodeMessage(TYPE_BATCH, batchItems));
+```
+
+## Message Encoding Function
+
+```typescript
+/**
+ * Encode a message according to the protocol
+ */
+function encodeMessage(
+  type: number,
+  data: string | Uint8Array | object | Array<{ type: number; data: any }>
+): Uint8Array {
+  // Convert data to binary format if needed
+  let binaryData: Uint8Array;
+
+  if (type === TYPE_BATCH) {
+    // Special handling for batch type
+    return encodeBatchMessage(data as Array<{ type: number; data: any }>);
+  } else if (type === TYPE_JSON) {
+    const jsonStr = typeof data === "string" ? data : JSON.stringify(data);
+    binaryData = new TextEncoder().encode(jsonStr);
+  } else if (type === TYPE_STRING) {
+    binaryData = new TextEncoder().encode(data as string);
+  } else if (type === TYPE_BINARY) {
+    binaryData = data as Uint8Array;
+  } else {
+    throw new Error(`Invalid message type: ${type}`);
+  }
+
+  // Create the message buffer with header + data
+  const messageBuffer = new Uint8Array(
+    PROTOCOL_HEADER_SIZE + binaryData.length
+  );
+
+  // Set message type (first byte)
+  messageBuffer[0] = type;
+
+  // Set message length (next 4 bytes, big-endian)
+  const length = binaryData.length;
+  messageBuffer[1] = (length >> 24) & 0xff;
+  messageBuffer[2] = (length >> 16) & 0xff;
+  messageBuffer[3] = (length >> 8) & 0xff;
+  messageBuffer[4] = length & 0xff;
+
+  // Copy the data
+  messageBuffer.set(binaryData, PROTOCOL_HEADER_SIZE);
+
+  return messageBuffer;
+}
+```

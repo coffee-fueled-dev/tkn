@@ -1,5 +1,5 @@
 /**
- * Observer - Token sequence parser
+ * tknMiner - Token sequence parser
  * It processes incoming data buffers and identifies token sequences.
  */
 
@@ -9,18 +9,18 @@ import type { HashedValue } from "./symbol-table";
 import { createHash } from "crypto";
 import { LRUCache } from "lru-cache";
 
-// Define the type for the token processed by the Observer
+// Define the type for the token processed by the tknMiner
 export interface OutputToken {
   hashes: HashedValue[];
   idx: number;
 }
 
-export type ObserverCallback = (
+export type TknMinerCallback = (
   error: Error | null,
   data?: OutputToken
 ) => void;
 
-export class Observer {
+export class TknMiner {
   // Replace explicit lifespan bank with LRU cache
   private bank: LRUCache<string, boolean>;
   private window: HashedValue[] = [];
@@ -37,7 +37,7 @@ export class Observer {
     });
 
     sayHello();
-    hello.server.info("Observer initialized with LRU token bank");
+    hello.server.info("TknMiner initialized with LRU token bank");
   }
 
   /**
@@ -69,9 +69,9 @@ export class Observer {
    * @param hashedChunk Array of HashedValues to process
    * @param callback Callback to invoke with results
    */
-  transform(hashedChunk: HashedValue[], callback: ObserverCallback) {
+  transform(hashedChunk: HashedValue[], callback: TknMinerCallback) {
     const startTime = performance.now();
-    hello.observer.debug("Received chunk of hashed values");
+    hello.tknMiner.debug("Received chunk of hashed values");
     let segment: HashedValue;
 
     try {
@@ -86,7 +86,7 @@ export class Observer {
 
         if (this.bank.has(windowKey)) {
           recordOperation(
-            "observer",
+            "tknMiner",
             "duplicate-token",
             performance.now() - startTime
           );
@@ -97,7 +97,7 @@ export class Observer {
         const known = this.window.slice(0, -1);
         const knownKey = this.getKey(known);
 
-        hello.observer.debug("Known window (excluding current):", knownKey);
+        hello.tknMiner.debug("Known window (excluding current):", knownKey);
 
         // Update the bank with the new token data
         // The value doesn't matter, just using the cache as a set
@@ -115,7 +115,7 @@ export class Observer {
         this.idx++;
 
         recordOperation(
-          "observer",
+          "tknMiner",
           "token-processed",
           performance.now() - startTime,
           false,
@@ -128,7 +128,7 @@ export class Observer {
       }
     } catch (error) {
       recordOperation(
-        "observer",
+        "tknMiner",
         "token-processing",
         performance.now() - startTime,
         true

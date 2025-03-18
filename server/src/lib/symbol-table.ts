@@ -23,7 +23,7 @@ export class SymbolTable {
   private poolIndex = 0;
   private readonly POOL_SIZE = 100;
 
-  constructor(hashSize: number = 32, cacheSize: number = 1000) {
+  constructor(hashSize: number = 64, cacheSize: number = 1000) {
     this.hashSize = hashSize;
     this.hasher = new Bun.CryptoHasher("sha256");
 
