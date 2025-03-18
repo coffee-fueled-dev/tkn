@@ -2,7 +2,7 @@
  * Prometheus-based throughput monitoring for server operations
  */
 
-import { hello } from "../lib/logs";
+import { hello } from "./logs";
 import * as promClient from "prom-client";
 
 // Initialize Prometheus metrics

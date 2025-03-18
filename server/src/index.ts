@@ -1,4 +1,4 @@
-import { TknServer } from "./tkn-server";
+import { TknServer } from "./lib/tkn-server";
 
 const { shutdown } = TknServer();
 

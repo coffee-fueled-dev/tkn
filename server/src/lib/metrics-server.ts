@@ -1,6 +1,6 @@
-import { hello } from "../lib/logs";
+import { hello } from "./logs";
+import { env } from "./env";
 import { getPrometheusMetrics } from "./throughput-monitor";
-import { env } from "../lib/env";
 
 // Create HTTP server for Prometheus metrics
 const startMetricsServer = () => {

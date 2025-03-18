@@ -10,7 +10,7 @@ const files = {
 
 // Example usage
 if (require.main === module) {
-  const streamer = createFileStreamer(files.sm7_7MB, 1, 1000);
+  const streamer = createFileStreamer(files.sm17KB, 10, 10);
   const client = new net.Socket();
 
   const LISTENER_PORT = Number(process.env.LISTENER_PORT);

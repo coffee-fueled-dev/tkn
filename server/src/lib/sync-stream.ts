@@ -6,7 +6,8 @@
 import { randomUUIDv7 } from "bun";
 import { Driver } from "neo4j-driver";
 import { hello, sayHello } from "../lib/logs";
-import type { OutputToken } from "./observer";
+import type { OutputToken } from "../lib/observer";
+import type { HashedValue } from "../lib/symbol-table";
 import { recordOperation } from "./throughput-monitor";
 
 export class SyncStream {
@@ -26,6 +27,13 @@ export class SyncStream {
   }
 
   /**
+   * Convert HashedValue array to a string representation for storage
+   */
+  private hashesToString(hashes: HashedValue[]): string {
+    return hashes.map((hash) => Buffer.from(hash).toString("base64")).join("|");
+  }
+
+  /**
    * Process a token chunk
    */
   process(
@@ -36,7 +44,7 @@ export class SyncStream {
     sayHello();
     // Log the received token
     hello.syncStream.debug("Received token chunk:", {
-      buffer: chunk.buffer.toString("base64"),
+      hashCount: chunk.hashes.length,
       idx: chunk.idx,
     });
 
@@ -95,10 +103,14 @@ export class SyncStream {
         const tkn1 = this.tokenBuffer.shift()!;
         const tkn2 = this.tokenBuffer[0]!; // Peek at the next token.
         hello.syncStream.debug("Processing token pair:", {
-          tkn1: { buffer: tkn1.buffer.toString("base64"), idx: tkn1.idx },
-          tkn2: { buffer: tkn2.buffer.toString("base64"), idx: tkn2.idx },
+          tkn1: { hashCount: tkn1.hashes.length, idx: tkn1.idx },
+          tkn2: { hashCount: tkn2.hashes.length, idx: tkn2.idx },
           txCounter,
         });
+
+        // Convert hashes to string representation for storage
+        const tkn1Value = this.hashesToString(tkn1.hashes);
+        const tkn2Value = this.hashesToString(tkn2.hashes);
 
         await tx.run(
           `
@@ -109,8 +121,8 @@ export class SyncStream {
           {
             sid: this.sessionId,
             tid: this.tenantId,
-            tkn1v: tkn1.buffer.toString(),
-            tkn2v: tkn2.buffer.toString(),
+            tkn1v: tkn1Value,
+            tkn2v: tkn2Value,
             tkn1idx: tkn1.idx,
           }
         );

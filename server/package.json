@@ -16,6 +16,7 @@
     "@parcel/watcher": "^2.5.1",
     "@types/debug": "^4.1.12",
     "debug": "^4.4.0",
+    "lru-cache": "^11.0.2",
     "neo4j-driver": "^5.28.1",
     "prom-client": "^15.1.3"
   }
