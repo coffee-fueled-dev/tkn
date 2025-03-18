@@ -5,7 +5,8 @@ export const env = envar([
   ["MEMGRAPH_USER", { required: true }],
   ["MEMGRAPH_PASS", { required: true }],
   ["MEMGRAPH_DB_NAME", { required: true }],
-  ["PORT", { parser: parseEnvInt, default: 4000, required: true }],
+  ["TKN_PORT", { parser: parseEnvInt, default: 8080, required: true }],
+  ["METRICS_PORT", { parser: parseEnvInt, default: 4000, required: true }],
   [
     "NODE_ENV",
     {

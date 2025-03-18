@@ -3,7 +3,8 @@
   "module": "src/index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "dev": "bun --watch src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -12,8 +13,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@parcel/watcher": "^2.5.1",
     "@types/debug": "^4.1.12",
     "debug": "^4.4.0",
-    "neo4j-driver": "^5.28.1"
+    "neo4j-driver": "^5.28.1",
+    "prom-client": "^15.1.3"
   }
 }

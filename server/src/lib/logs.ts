@@ -2,7 +2,7 @@ import debug from "debug";
 import { createDebugPatterns, helloInnit } from "../util/hello";
 import { env as environmentVariables } from "./env";
 
-const ns = ["graph", "observer", "pusher", "server"] as const;
+const ns = ["graph", "observer", "syncStream", "server", "throughput"] as const;
 const env = ["info", "warn", "debug", "error"] as const;
 
 const patterns = {

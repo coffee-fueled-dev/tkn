@@ -1,4 +1,6 @@
-import { TknServer } from "./server";
-import { env } from "./lib/env";
+import { TknServer } from "./tkn-server";
 
-new TknServer(env.PORT);
+const { shutdown } = TknServer();
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
