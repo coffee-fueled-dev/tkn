@@ -2,7 +2,7 @@ import debug from "debug";
 import { createDebugPatterns, helloInnit } from "../util/hello";
 import { env as environmentVariables } from "./env";
 
-const ns = ["graph", "observer", "syncStream", "server", "throughput"] as const;
+const ns = ["graph", "tknMiner", "syncStream", "server", "throughput"] as const;
 const env = ["info", "warn", "debug", "error"] as const;
 
 const patterns = {
@@ -12,5 +12,7 @@ const patterns = {
 
 const DEBUG = patterns[environmentVariables.NODE_ENV];
 
-export const sayHello = () => debug.enable(DEBUG);
+// Enable debugging immediately when this module is imported
+debug.enable(DEBUG);
+
 export const hello = helloInnit(ns, env);

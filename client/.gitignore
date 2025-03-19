@@ -1,7 +1,5 @@
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
-client/examples/test_files/*
-
 # Logs
 
 logs

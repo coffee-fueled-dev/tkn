@@ -1,10 +1,7 @@
 {
-  "name": "tkn-stream-demo",
-  "module": "src/index.ts",
+  "name": "tkn-client",
+  "module": "index.ts",
   "type": "module",
-  "scripts": {
-    "start": "bun src/index.ts"
-  },
   "devDependencies": {
     "@types/bun": "latest"
   },

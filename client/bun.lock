@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "tkn-stream-demo",
+      "name": "tkn-client",
       "devDependencies": {
         "@types/bun": "latest",
       },

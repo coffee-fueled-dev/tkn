@@ -1,127 +1,199 @@
-# TKN
+# TKN - Token Processing Protocol and Implementation
 
-TKN is an online pattern-mining project that exposes a powerful algorithm over a TCP interface. It leverages a real-time data processing pipeline to analyze and extract patterns from incoming data streams, and then persists the relationships between patterns in a Neo4j database. This project is designed to be robust, scalable, and easy to integrate into your existing infrastructure.
+TKN is a lightweight, high-performance token processing system consisting of a binary communication protocol, a server implementation for token processing and storage, and client libraries for both Node.js/Bun and browser environments.
 
-## Table of Contents
+## Overview
 
-- [Features](#features)
-- [Architecture](#architecture)
-  - [Server](#server)
-  - [Observer (Core Algorithm)](#observer-core-algorithm)
-  - [Pusher (Database Syncing)](#pusher-database-syncing)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Starting the Server](#starting-the-server)
-  - [Authentication](#authentication)
-- [Configuration](#configuration)
-- [Graceful Shutdown](#graceful-shutdown)
-- [Contributing](#contributing)
-- [License](#license)
+The TKN project provides a complete solution for token-based data processing:
 
-## Features
+- **Protocol**: A lightweight binary protocol for efficient data transmission
+- **Server**: A high-performance token processing server with Neo4j/Memgraph integration
+- **Client Libraries**: Easy-to-use client libraries for various environments
 
-- **Online Pattern Mining:** Processes streaming data to extract and update patterns in real time.
-- **TCP Interface:** Exposes a simple TCP server for easy integration.
-- **Modular Design:** Uses a dedicated Observer for pattern mining and a Pusher for syncing tokens to a Neo4j database.
-- **Real-Time Authentication:** Ensures secure connections with token-based authentication.
-- **Graceful Shutdown:** Handles system signals to close connections and shutdown the server cleanly.
-- **Logging:** Provides detailed logging for each step in the data pipeline for easier debugging and monitoring.
+The system is designed to handle real-time token sequence processing, with efficient batch handling and automatic session management. It's built with performance in mind, using Bun as the runtime environment for the server.
 
-## Architecture
+## Components
 
-### Server
+### TKN Protocol
 
-The TCP server is the entry point for client connections. It:
+The TKN protocol is a simple binary protocol with the following format:
 
-- Listens on a configurable port (default: 5000).
-- Requires the first message from each client to be an authentication token.
-- On successful authentication, it creates a dedicated processing pipeline for that connection using the Observer and Pusher components.
-- Tracks active client connections and supports graceful shutdown.
-
-### Observer (Core Algorithm)
-
-The Observer is a custom stream transformer that:
-
-- Reads incoming data as a series of bytes.
-- Maintains a sliding window to build tokens.
-- Computes pattern tokens and tracks them using a simple lifespan-based mechanism.
-- Emits tokens downstream for further processing.
-- Provides methods to inspect the current window and token bank, which are useful for debugging and testing.
-
-### Pusher (Database Syncing)
-
-The Pusher is a writable stream that:
-
-- Buffers tokens received from the Observer.
-- Processes tokens in batches.
-- Creates or merges token nodes in a Neo4j database.
-- Establishes relationships between token pairs to reflect the discovered pattern sequences.
-- Uses a dedicated Neo4j session and transaction handling to ensure consistency and handle errors gracefully.
-
-## Installation
-
-1. **Clone the repository:**
-
-```bash
-git clone https://github.com/yourusername/tkn.git
-cd tkn
+```
++------+----------------+-----------------------+
+| Type | Length (4byte) | Payload (variable)    |
++------+----------------+-----------------------+
+   1B        4B             Length bytes
 ```
 
-2. **Install dependencies:**
+### Message Types
 
-Ensure you have Bun.js installed, then run:
+- `1`: JSON data
+- `2`: String data
+- `3`: Binary data
+- `4`: Batch data (contains multiple messages of other types)
 
-```bash
-bun install
+### Length Field
+
+The length field is a 4-byte big-endian integer that specifies the length of the payload in bytes.
+
+### Batch Message Format
+
+When sending a batch (type `4`), the payload contains multiple items, each with its own type and length:
+
+```
++------+----------------+--------------+--------------+...+--------------+--------------+
+| Type | Total Length   | Item1 Type   | Item1 Length | ...| ItemN Type   | ItemN Length |
++------+----------------+--------------+--------------+...+--------------+--------------+
+| Item1 Payload         | ... | ItemN Payload         |
++------------------------+...+------------------------+
 ```
 
-3. **Set up Neo4j:**
-   - Install and run a Neo4j instance.
-   - Configure the connection in your project (typically via environment variables or a configuration file).
+This allows sending multiple messages of different types in a single packet, reducing network overhead.
 
-## Usage
+## Server
 
-### Starting the Server
+The server processes incoming messages according to the protocol, parses them based on the message type, and then processes them through the token mining system.
 
-Run the following command to start the TCP server:
+### Key Features
 
-```bash
-bun start
-```
+- Real-time token sequence processing and parsing
+- Neo4j/Memgraph database integration for token storage
+- Prometheus metrics monitoring
+- WebSocket-based communication
+- Efficient token batch processing
+- Automatic session management
 
-By default, the server will listen on port 5000. You can change the port by modifying the startServer function parameters or by setting an environment variable if you implement that in your configuration.
-
-### Authentication
-
-The first message sent by a client must be an authentication token. In the current implementation, the token is validated against a hardcoded value ("valid_token"). Make sure to update this logic with your actual token validation mechanism for production use.
-
-Example client connection using netcat:
+### Running the Server
 
 ```bash
-echo "valid_token" | nc localhost 5000
+bun run server/src/index.ts
 ```
 
-### Configuration
+## TKN Client Library
 
-- Port: Change the server port in the startServer function (default: 5000).
-- Authentication: Replace the token validation logic with your custom implementation.
-- Neo4j Connection: Update the Neo4j driver configuration in ../lib/clients to match your database credentials and connection details.
+A lightweight client library is included for easy communication with the TKN server:
 
-### Graceful Shutdown
+- `client/src/client.ts`: Node.js/Bun client library
+- `client/src/client.ts`: Browser-compatible client using WebSockets
 
-The server listens for SIGINT and SIGTERM signals. Upon receiving a shutdown signal, it:
+### Using the Node.js Client
 
-- Stops accepting new connections.
-- Closes the Neo4j driver.
-- Gracefully ends active client connections.
-- Forces any lingering connections to close after a 5-second timeout.
+```typescript
+import { TknNodeClient } from "./client/src/client";
 
-## Contributing
+// Create a client
+const client = new TknNodeClient({
+  host: "localhost",
+  port: 8080,
+  onConnect: (client) => {
+    console.log("Connected to TKN server!");
 
-Contributions are welcome! If you have any suggestions, bug reports, or improvements, please open an issue or submit a pull request on GitHub.
+    // Send JSON data
+    client.sendJson({ type: "sensor", values: [42, 17, 23, 84] });
+
+    // Send string data
+    client.sendString("Hello from TKN client!");
+
+    // Send binary data
+    client.sendBinary(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+
+    // Send batch data (combining multiple message types)
+    client.sendBatch([
+      {
+        type: 1, // JSON
+        data: { type: "sensor", values: [42, 17, 23, 84] },
+      },
+      {
+        type: 2, // String
+        data: "Log message from batch",
+      },
+      {
+        type: 3, // Binary
+        data: new Uint8Array([1, 2, 3, 4, 5]),
+      },
+    ]);
+  },
+});
+
+// Connect to the server
+client.connect();
+```
+
+### Using the Browser Client
+
+```html
+<script type="module">
+  import { TknBrowserClient } from "./client/src/client.js";
+
+  const client = new TknBrowserClient({
+    url: "ws://localhost:8080",
+    onConnect: (client) => {
+      console.log("Connected to TKN server!");
+
+      // Send JSON data
+      client.sendJson({ type: "sensor", values: [42, 17, 23, 84] });
+
+      // Send a batch of mixed data
+      client.sendBatch([
+        { type: 1, data: { event: "login", user: "user123" } },
+        { type: 2, data: "System initialized" },
+      ]);
+    },
+  });
+
+  client.connect();
+</script>
+```
+
+### Client API
+
+Both client libraries share a similar API:
+
+- `connect()`: Connect to the TKN server
+- `disconnect()`: Close the connection
+- `sendJson(data)`: Send JSON data
+- `sendString(data)`: Send string data
+- `sendBinary(data)`: Send binary data
+- `sendBatch(items)`: Send multiple items of different types in a single message
+- `isConnected()`: Check connection status
+
+## Project Structure
+
+```
+├── client/               # Client implementation
+│   ├── src/              # Client source code
+│   │   ├── client.ts     # Client implementation
+│   │   ├── common.ts     # Shared utilities and types
+│   │   └── index.ts      # Entry point
+│   └── examples/         # Client usage examples
+├── server/               # Server implementation
+│   ├── src/              # Server source code
+│   │   ├── lib/          # Server libraries
+│   │   │   ├── tkn-server.ts    # Main server implementation
+│   │   │   ├── tkn-miner.ts     # Token mining logic
+│   │   │   ├── sync-stream.ts   # Token batch processing
+│   │   │   └── metrics-server.ts # Prometheus metrics
+│   │   └── index.ts      # Server entry point
+```
+
+## Getting Started
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   cd server && bun install
+   cd ../client && bun install
+   ```
+3. Configure the server environment (see server/README.md)
+4. Start the server:
+   ```bash
+   cd server && bun run dev
+   ```
+5. Run a client example:
+   ```bash
+   cd client && bun run examples/tkn-client-demo.ts
+   ```
 
 ## License
 
-This project is licensed under the MIT License.
-
-TKN provides a robust framework for pattern mining in a streaming environment, making it an excellent choice for real-time data analysis applications. Enjoy exploring and extending its functionality!
+[Add your license information here]

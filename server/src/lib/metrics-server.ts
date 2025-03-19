@@ -1,9 +1,29 @@
-/**
- * Prometheus-based throughput monitoring for server operations
- */
-
-import { hello } from "../lib/logs";
+import { hello } from "./logs";
+import { env } from "./env";
 import * as promClient from "prom-client";
+
+// Create HTTP server for Prometheus metrics
+export const metricsServer = (() => {
+  const server = Bun.serve({
+    port: env.METRICS_PORT,
+    async fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === "/metrics") {
+        const metrics = await getPrometheusMetrics();
+        return new Response(metrics, {
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    },
+  });
+
+  hello.server.info(
+    `Metrics server listening at http://localhost:${server.port}/metrics`
+  );
+
+  return { server };
+})();
 
 // Initialize Prometheus metrics
 const throughputCounter = new promClient.Counter({
