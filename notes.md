@@ -1,16 +1,22 @@
-Query to recombine tkns from database using the dict:
+Pagerank query that recovers original token values:
 
-MATCH (tkn:Tkn)
-WITH tkn, split(tkn.lookupKeys, '|') AS keys
+CALL pagerank.get() YIELD node, rank
+WITH node, rank
+ORDER BY rank DESC
+
+WITH node, rank,
+CASE WHEN node.lookupKeys IS NULL THEN [] ELSE split(node.lookupKeys, '|') END AS keys
+WHERE size(keys) > 0
 UNWIND range(0, size(keys)-1) AS index
-WITH tkn.value AS tokenValue, keys[index] AS key, index
+WITH node.value AS tokenValue, keys[index] AS key, index, rank
+WHERE key IS NOT NULL
 MATCH (dict:ValueDictionary)
 WHERE dict.key = key
-WITH tokenValue, index, dict.value AS value
+WITH tokenValue, index, dict.value AS value, rank
 ORDER BY tokenValue, index
-WITH tokenValue, collect(value) AS originalValues
-RETURN tokenValue AS encodedToken,
-originalValues,
-reduce(s = "", value IN originalValues | s +
+WITH tokenValue, collect(value) AS originalValues, rank
+WHERE size(originalValues) > 0
+RETURN reduce(s = "", value IN originalValues | s +
 CASE WHEN s = "" THEN "" ELSE ", " END +
-value) AS originalTokenString
+value) AS originalTokenString, rank
+ORDER BY rank DESC

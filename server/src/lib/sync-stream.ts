@@ -5,12 +5,12 @@
 
 import { randomUUIDv7 } from "bun";
 import { Driver } from "neo4j-driver";
-import { hello, sayHello } from "./logs";
+import { hello } from "./logs";
 import type { OutputToken } from "./tkn-miner";
-import type { HashedValue } from "./symbol-table";
-import { recordOperation } from "./throughput-monitor";
-import { SymbolTable } from "./symbol-table";
+import { SymbolTable } from "./symbol-table/symbol-table";
 import { createHash } from "crypto";
+import { recordOperation } from "./metrics-server";
+import type { HashedValue } from "./symbol-table/hash-algorithms";
 
 export class SyncStream {
   private tokenBuffer: OutputToken[] = [];
@@ -21,7 +21,6 @@ export class SyncStream {
   private symbolTable?: SymbolTable; // Optional symbol table for decoding values
 
   constructor(tenantId: string, driver: Driver, symbolTable?: SymbolTable) {
-    sayHello();
     this.tenantId = tenantId;
     this.driver = driver;
     this.symbolTable = symbolTable;
@@ -157,7 +156,6 @@ export class SyncStream {
     callback: (error?: Error | null) => void = () => {}
   ): void {
     const startTime = performance.now();
-    sayHello();
     // Log the received token
     hello.syncStream.debug("Received token chunk:", {
       hashCount: chunk.hashes.length,

@@ -3,11 +3,11 @@
  * It processes incoming data buffers and identifies token sequences.
  */
 
-import { sayHello, hello } from "./logs";
-import { recordOperation } from "./throughput-monitor";
-import type { HashedValue } from "./symbol-table";
+import { hello } from "./logs";
 import { createHash } from "crypto";
 import { LRUCache } from "lru-cache";
+import type { HashedValue } from "./symbol-table/hash-algorithms";
+import { recordOperation } from "./metrics-server";
 
 // Define the type for the token processed by the tknMiner
 export interface OutputToken {
@@ -36,7 +36,6 @@ export class TknMiner {
       // ttl: 30000, // 30 seconds in milliseconds
     });
 
-    sayHello();
     hello.server.info("TknMiner initialized with LRU token bank");
   }
 

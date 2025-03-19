@@ -12,5 +12,7 @@ const patterns = {
 
 const DEBUG = patterns[environmentVariables.NODE_ENV];
 
-export const sayHello = () => debug.enable(DEBUG);
+// Enable debugging immediately when this module is imported
+debug.enable(DEBUG);
+
 export const hello = helloInnit(ns, env);
