@@ -1,13 +1,6 @@
-/**
- * tknMiner - Token sequence parser
- * It processes incoming data buffers and identifies token sequences.
- */
-
-import { hello } from "../metrics/logs";
 import { LRUCache } from "lru-cache";
 import type { HashedValue } from "./cyrb53";
 import { cyrb53 } from "./cyrb53";
-import { recordOperation } from "../metrics";
 
 // Define the type for the token processed by the tknMiner
 export interface OutputToken {
@@ -35,8 +28,6 @@ export class TknMiner {
       // Optional: Add TTL-based expiration if needed
       // ttl: 30000, // 30 seconds in milliseconds
     });
-
-    hello.server.info("TknMiner initialized with LRU token bank");
   }
 
   /**
@@ -69,8 +60,6 @@ export class TknMiner {
    * @param callback Callback to invoke with results
    */
   transform(hashedChunk: HashedValue[], callback: TknMinerCallback) {
-    const startTime = performance.now();
-    hello.tknMiner.debug("Received chunk of hashed values");
     let segment: HashedValue;
 
     try {
@@ -84,19 +73,12 @@ export class TknMiner {
         // No need to decrement lifespans - LRU cache handles eviction automatically
 
         if (this.bank.has(windowKey)) {
-          recordOperation(
-            "tknMiner",
-            "duplicate-token",
-            performance.now() - startTime
-          );
           callback(null);
           return;
         }
 
         const known = this.window.slice(0, -1);
         const knownKey = this.getKey(known);
-
-        hello.tknMiner.debug("Known window (excluding current):", { knownKey });
 
         // Update the bank with the new token data
         // The value doesn't matter, just using the cache as a set
@@ -113,25 +95,11 @@ export class TknMiner {
         this.window = [segment];
         this.idx++;
 
-        recordOperation(
-          "tknMiner",
-          "token-processed",
-          performance.now() - startTime,
-          false,
-          ["sync-stream"]
-        );
-
         // Call the callback with the new token
         callback(null, token);
         return;
       }
     } catch (error) {
-      recordOperation(
-        "tknMiner",
-        "token-processing",
-        performance.now() - startTime,
-        true
-      );
       callback(error as Error);
     }
   }

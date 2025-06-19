@@ -1,10 +1,8 @@
-import { hello } from "../metrics/logs";
 import { TknMiner } from "./miner";
 import { SymbolTable } from "./symbol-table";
 import { memgraphDriver } from "../memgraph/client";
 import { randomUUIDv7 } from "bun";
 import {
-  recordOperation,
   incrementConnections,
   decrementConnections,
   createMetricsHandler,
@@ -14,8 +12,6 @@ import { SyncStream } from "../memgraph/sync-stream";
 import { handleData, type SocketData } from "./protocol";
 
 export const TknServer = () => {
-  hello.server.info("Starting TKN server with integrated metrics");
-
   // Create metrics handler
   const metricsHandler = createMetricsHandler();
 
@@ -56,7 +52,6 @@ export const TknServer = () => {
       open(socket) {
         const startTime = performance.now();
 
-        hello.server.info("New connection");
         const sessionId = randomUUIDv7();
         const symbolTable = new SymbolTable();
         socket.data = {
@@ -70,38 +65,28 @@ export const TknServer = () => {
 
         // Track connection metrics
         incrementConnections();
-        recordOperation(
-          "server",
-          "connection-opened",
-          performance.now() - startTime,
-          false
-        );
       },
-      close(socket) {
-        hello.server.info("Connection closed");
+      close() {
+        console.info("Connection closed");
         decrementConnections();
       },
-      error(socket, err) {
-        hello.server.error(
-          "Socket error:",
-          { sessionId: socket.data?.sessionId || "unknown" },
-          err instanceof Error ? err : new Error(String(err))
-        );
+      error(err) {
+        console.error(err);
       },
     },
   });
 
-  hello.server.info(`HTTP/Metrics server listening on port ${httpServer.port}`);
-  hello.server.info(`TKN socket server listening on port ${socketServer.port}`);
-  hello.server.info(`Health check: http://localhost:${httpServer.port}/health`);
-  hello.server.info(`Metrics: http://localhost:${httpServer.port}/metrics`);
+  console.info(`HTTP/Metrics server listening on port ${httpServer.port}`);
+  console.info(`TKN socket server listening on port ${socketServer.port}`);
+  console.info(`Health check: http://localhost:${httpServer.port}/health`);
+  console.info(`Metrics: http://localhost:${httpServer.port}/metrics`);
 
   const shutdown = () => {
-    hello.server.info("Shutting down TKN server...");
+    console.info("Shutting down TKN server...");
     httpServer.stop(true);
     socketServer.stop(true);
     memgraphDriver.close();
-    hello.server.info("Server shutdown complete");
+    console.info("Server shutdown complete");
   };
 
   return {

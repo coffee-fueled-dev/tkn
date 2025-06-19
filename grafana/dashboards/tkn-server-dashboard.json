@@ -30,7 +30,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -43,7 +43,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -66,7 +66,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -89,13 +90,19 @@
       },
       "targets": [
         {
-          "expr": "rate(component_operation_throughput_total[5m])",
+          "expr": "rate(tokens_processed_total[5m])",
           "interval": "",
-          "legendFormat": "{{component}}.{{operation}}",
+          "legendFormat": "Tokens Processed/sec",
           "refId": "A"
+        },
+        {
+          "expr": "rate(tokens_emitted_total[5m])",
+          "interval": "",
+          "legendFormat": "Tokens Emitted/sec",
+          "refId": "B"
         }
       ],
-      "title": "Operation Throughput (ops/sec)",
+      "title": "Token Processing Rate",
       "type": "timeseries"
     },
     {
@@ -110,7 +117,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -123,7 +130,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -147,7 +154,7 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -170,19 +177,13 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(component_operation_latency_seconds_bucket[5m]))",
+          "expr": "rate(batch_items_processed_total[5m])",
           "interval": "",
-          "legendFormat": "95th percentile - {{component}}.{{operation}}",
+          "legendFormat": "Batch Items/sec",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.50, rate(component_operation_latency_seconds_bucket[5m]))",
-          "interval": "",
-          "legendFormat": "50th percentile - {{component}}.{{operation}}",
-          "refId": "B"
         }
       ],
-      "title": "Operation Latency",
+      "title": "Batch Item Processing Rate",
       "type": "timeseries"
     },
     {
@@ -197,7 +198,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -210,7 +211,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -233,7 +234,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "binBps"
         },
         "overrides": []
       },
@@ -256,13 +258,19 @@
       },
       "targets": [
         {
-          "expr": "rate(component_operation_errors_total[5m])",
+          "expr": "rate(network_bytes_received_total[5m])",
           "interval": "",
-          "legendFormat": "{{component}}.{{operation}}",
+          "legendFormat": "Network Bytes Received/sec",
           "refId": "A"
+        },
+        {
+          "expr": "rate(memgraph_bytes_written_total[5m])",
+          "interval": "",
+          "legendFormat": "Memgraph Bytes Written/sec",
+          "refId": "B"
         }
       ],
-      "title": "Error Rate (errors/sec)",
+      "title": "I/O Throughput",
       "type": "timeseries"
     },
     {
@@ -270,35 +278,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
@@ -325,25 +305,27 @@
       },
       "id": 4,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
         },
-        "tooltip": {
-          "mode": "single"
-        }
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "text": {}
       },
+      "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "rate(component_dependency_calls_total[5m])",
+          "expr": "active_connections_total",
           "interval": "",
-          "legendFormat": "{{component}} -> {{dependency}}",
+          "legendFormat": "Active Connections",
           "refId": "A"
         }
       ],
-      "title": "Dependency Calls (calls/sec)",
-      "type": "timeseries"
+      "title": "Active Connections",
+      "type": "gauge"
     },
     {
       "datasource": "Prometheus",
@@ -357,7 +339,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -370,7 +352,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -393,13 +375,14 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 16
       },
@@ -416,109 +399,29 @@
       },
       "targets": [
         {
-          "expr": "rate(log_messages_total[5m])",
+          "expr": "rate(tokens_emitted_total[5m]) / rate(tokens_processed_total[5m]) * 100",
           "interval": "",
-          "legendFormat": "{{namespace}}.{{level}}",
+          "legendFormat": "Token Emission Efficiency %",
           "refId": "A"
         }
       ],
-      "title": "Log Messages Rate (logs/sec)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
-      },
-      "targets": [
-        {
-          "expr": "rate(log_errors_total[5m])",
-          "interval": "",
-          "legendFormat": "{{namespace}} - {{error_type}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Error Log Rate by Type (errors/sec)",
+      "title": "Token Processing Efficiency",
       "type": "timeseries"
     }
   ],
   "schemaVersion": 27,
   "style": "dark",
-  "tags": ["tkn", "server", "performance"],
+  "tags": ["tkn", "performance"],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
-  "title": "TKN Server Dashboard",
+  "title": "TKN Server Performance",
   "uid": "tkn-server",
   "version": 1
 }

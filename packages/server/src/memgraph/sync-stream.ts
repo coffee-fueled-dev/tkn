@@ -5,11 +5,9 @@
 
 import { randomUUIDv7 } from "bun";
 import { Driver } from "neo4j-driver";
-import { hello } from "../metrics/logs";
 import type { OutputToken } from "../lib/miner";
 import { SymbolTable } from "../lib/symbol-table";
 
-import { recordOperation } from "../metrics";
 import type { HashedValue } from "../lib/cyrb53";
 
 export class SyncStream {
@@ -24,9 +22,6 @@ export class SyncStream {
     this.tenantId = tenantId;
     this.driver = driver;
     this.symbolTable = symbolTable;
-    hello.syncStream.info(
-      `SyncStream initialized for tenant ${this.tenantId} with sessionId ${this.sessionId}`
-    );
   }
 
   private encodeHashesForStorage(hashes: HashedValue[]): string {
@@ -42,9 +37,6 @@ export class SyncStream {
         .map((value) => this.formatSingleValue(value))
         .join(", ");
     } catch (err) {
-      hello.syncStream.debug("Could not recover original values:", {
-        error: err instanceof Error ? err.message : String(err),
-      });
       return `Error recovering original values: ${
         err instanceof Error ? err.message : String(err)
       }`;
@@ -102,11 +94,6 @@ export class SyncStream {
         valueMappings: lookupEntries,
       };
     } catch (err) {
-      hello.syncStream.error(
-        "Error processing original data for storage:",
-        { error: err instanceof Error ? err.message : String(err) },
-        err instanceof Error ? err : new Error(String(err))
-      );
       return { keys: "error", valueMappings: [] };
     }
   }
@@ -129,20 +116,11 @@ export class SyncStream {
   ): void {
     const startTime = performance.now();
 
-    hello.syncStream.debug("Received token chunk:", {
-      hashCount: chunk.hashes.length,
-      idx: chunk.idx,
-    });
-
     this.tokenBuffer.push(chunk);
-    hello.syncStream.debug("Token buffer length:", {
-      length: this.tokenBuffer.length,
-    });
 
     if (this.shouldProcessBatch()) {
       this.processTokenBatch(startTime, callback);
     } else {
-      this.recordBufferOperation(startTime);
       callback();
     }
   }
@@ -156,45 +134,18 @@ export class SyncStream {
     callback: (error?: Error | null) => void
   ): void {
     this.syncing = true;
-    hello.syncStream.debug("Starting batch syncing");
 
     this.processBatch()
       .then(() => {
         this.syncing = false;
-        hello.syncStream.debug("Finished batch syncing");
-        recordOperation(
-          "sync-stream",
-          "batch-processed",
-          performance.now() - startTime,
-          false,
-          ["neo4j"]
-        );
+
         callback();
       })
       .catch((err) => {
         this.syncing = false;
-        hello.syncStream.error(
-          "Error during batch syncing",
-          { sessionId: this.sessionId },
-          err instanceof Error ? err : new Error(String(err))
-        );
-        recordOperation(
-          "sync-stream",
-          "batch-processing",
-          performance.now() - startTime,
-          true,
-          ["neo4j"]
-        );
+
         callback(err);
       });
-  }
-
-  private recordBufferOperation(startTime: number): void {
-    recordOperation(
-      "sync-stream",
-      "token-buffered",
-      performance.now() - startTime
-    );
   }
 
   private async processBatch(): Promise<void> {
@@ -202,41 +153,22 @@ export class SyncStream {
     const session = this.driver.session();
     const tx = session.beginTransaction();
 
-    hello.syncStream.debug("Opened Neo4j session and transaction");
-
     try {
       const batchData = this.prepareBatchData();
 
       if (batchData.pairBatch.length === 0) {
-        hello.syncStream.debug("No token pairs to process");
         await tx.commit();
         return;
       }
 
-      hello.syncStream.debug("Processing batch with UNWIND:", {
-        tokenPairs: batchData.pairBatch.length,
-        dictionaryEntries: batchData.dictBatch.length,
-      });
-
       await this.storeDictionaryEntriesBatch(tx, batchData.dictBatch);
       await this.storeTokenRelationshipsBatch(tx, batchData.pairBatch);
 
-      hello.syncStream.debug("Committing transaction, pairs processed:", {
-        pairCount: batchData.pairBatch.length,
-      });
       await tx.commit();
-      recordOperation(
-        "neo4j",
-        "transaction-committed",
-        performance.now() - startTime,
-        false,
-        ["sync-stream"]
-      );
     } catch (error) {
-      await this.handleTransactionError(tx, startTime, error);
+      await this.handleTransactionError(tx);
       throw error;
     } finally {
-      hello.syncStream.debug("Closing Neo4j session");
       await session.close();
     }
   }
@@ -287,10 +219,6 @@ export class SyncStream {
       }
 
       processedPairs++;
-      hello.syncStream.debug(
-        "Token pair prepared for batch:",
-        tokenData.logData
-      );
     }
 
     return { pairBatch, dictBatch };
@@ -301,10 +229,6 @@ export class SyncStream {
     dictBatch: Array<{ key: string; value: string }>
   ): Promise<void> {
     if (dictBatch.length === 0) return;
-
-    hello.syncStream.debug("Storing dictionary entries with UNWIND:", {
-      count: dictBatch.length,
-    });
 
     await tx.run(
       `
@@ -330,10 +254,6 @@ export class SyncStream {
     }>
   ): Promise<void> {
     if (pairBatch.length === 0) return;
-
-    hello.syncStream.debug("Storing token relationships with UNWIND:", {
-      count: pairBatch.length,
-    });
 
     await tx.run(
       `
@@ -388,23 +308,7 @@ export class SyncStream {
     );
   }
 
-  private async handleTransactionError(
-    tx: any,
-    startTime: number,
-    error: any
-  ): Promise<void> {
-    hello.syncStream.error(
-      "Transaction failed, rolling back",
-      { sessionId: this.sessionId },
-      error instanceof Error ? error : new Error(String(error))
-    );
+  private async handleTransactionError(tx: any): Promise<void> {
     await tx.rollback();
-    recordOperation(
-      "neo4j",
-      "transaction-failed",
-      performance.now() - startTime,
-      true,
-      ["sync-stream"]
-    );
   }
 }

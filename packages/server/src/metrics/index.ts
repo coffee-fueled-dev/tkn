@@ -1,69 +1,68 @@
-import { hello } from "./logs";
 import * as promClient from "prom-client";
 
 const register = new promClient.Registry();
 
 promClient.collectDefaultMetrics({ register });
 
-const throughputCounter = new promClient.Counter({
-  name: "component_operation_throughput_total",
-  help: "Total number of operations per component",
-  labelNames: ["component", "operation"],
+// 1. Token Processing Rate (tokens processed vs emitted)
+const tokensProcessedCounter = new promClient.Counter({
+  name: "tokens_processed_total",
+  help: "Total number of tokens processed by the miner",
   registers: [register],
 });
 
-const latencyHistogram = new promClient.Histogram({
-  name: "component_operation_latency_seconds",
-  help: "Operation latency histogram",
-  labelNames: ["component", "operation"],
-  buckets: [0.1, 0.5, 1, 2, 5], // buckets in seconds
+const tokensEmittedCounter = new promClient.Counter({
+  name: "tokens_emitted_total",
+  help: "Total number of tokens emitted by the miner",
   registers: [register],
 });
 
-const errorCounter = new promClient.Counter({
-  name: "component_operation_errors_total",
-  help: "Total number of operation errors",
-  labelNames: ["component", "operation"],
+// 2. Batch Item Processing Rate (character-level throughput)
+const batchItemsProcessedCounter = new promClient.Counter({
+  name: "batch_items_processed_total",
+  help: "Total number of individual items processed from batches",
   registers: [register],
 });
 
-const dependencyCounter = new promClient.Counter({
-  name: "component_dependency_calls_total",
-  help: "Total number of dependency calls",
-  labelNames: ["component", "dependency"],
+// 3. I/O Throughput
+const networkBytesReceivedCounter = new promClient.Counter({
+  name: "network_bytes_received_total",
+  help: "Total bytes received from network connections",
   registers: [register],
 });
 
+const memgraphBytesWrittenCounter = new promClient.Counter({
+  name: "memgraph_bytes_written_total",
+  help: "Total bytes written to Memgraph database",
+  registers: [register],
+});
+
+// Connection tracking
 const connectionGauge = new promClient.Gauge({
   name: "active_connections_total",
   help: "Number of active client connections",
   registers: [register],
 });
 
-export function recordOperation(
-  component: string,
-  operation: string,
-  latency: number,
-  error?: boolean,
-  dependencies?: string[]
-): void {
-  throughputCounter.labels(component, operation).inc();
-  latencyHistogram.labels(component, operation).observe(latency / 1000); // Seconds
+// Simplified recording functions
+export function recordTokenProcessed(): void {
+  tokensProcessedCounter.inc();
+}
 
-  if (error) {
-    errorCounter.labels(component, operation).inc();
-    hello.throughput.error(`Operation error in ${component}:${operation}`, {
-      component,
-      operation,
-      latency: `${latency}ms`,
-    });
-  }
+export function recordTokenEmitted(): void {
+  tokensEmittedCounter.inc();
+}
 
-  if (dependencies) {
-    dependencies.forEach((dep) => {
-      dependencyCounter.labels(component, dep).inc();
-    });
-  }
+export function recordBatchItemProcessed(): void {
+  batchItemsProcessedCounter.inc();
+}
+
+export function recordNetworkBytesReceived(bytes: number): void {
+  networkBytesReceivedCounter.inc(bytes);
+}
+
+export function recordMemgraphBytesWritten(bytes: number): void {
+  memgraphBytesWrittenCounter.inc(bytes);
 }
 
 export function updateConnectionCount(count: number): void {
@@ -96,8 +95,3 @@ export function createMetricsHandler() {
 }
 
 export { register };
-
-hello.server.debug("Metrics system initialized", {
-  defaultMetricsEnabled: true,
-  scrapeEndpoint: "/metrics",
-});

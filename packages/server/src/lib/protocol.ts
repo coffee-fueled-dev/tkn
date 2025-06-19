@@ -1,9 +1,7 @@
-import { hello } from "../metrics/logs";
 import { TknMiner } from "./miner";
 import { SymbolTable } from "./symbol-table";
 import type { Socket } from "bun";
 import { SyncStream } from "../memgraph/sync-stream";
-import { recordOperation } from "../metrics";
 
 // Type definitions
 export type SocketData = {
@@ -78,37 +76,25 @@ export function processMessage(
       try {
         const jsonStr = new TextDecoder().decode(data);
         parsedData = JSON.parse(jsonStr);
-        hello.server.debug("Received JSON data");
       } catch (err) {
-        hello.server.error(
-          "Error parsing JSON:",
-          { messageType, dataLength: data.length },
-          err instanceof Error ? err : new Error(String(err))
-        );
         return;
       }
       break;
 
     case TYPE_STRING:
       parsedData = new TextDecoder().decode(data);
-      hello.server.debug("Received string data");
       break;
 
     case TYPE_BINARY:
       parsedData = data;
-      hello.server.debug("Received binary data");
       break;
 
     case TYPE_BATCH:
       // Process batch data - extract and process each item
-      hello.server.debug("Received batch data");
       processBatchMessage(socket, data);
       return; // Batch processing is handled separately, so return early
 
     default:
-      hello.server.error(`Unknown message type: ${messageType}`, {
-        messageType,
-      });
       return;
   }
 
@@ -120,11 +106,7 @@ export function processMessage(
   // Process the hashed values with the tkn miner
   socket.data.tknMiner.transform(hashedValues, (err, token) => {
     if (err) {
-      hello.server.error(
-        "Error transforming data:",
-        { sessionId: socket.data.sessionId },
-        err instanceof Error ? err : new Error(String(err))
-      );
+      console.error(err);
     } else if (token) {
       socket.data.syncStream.process(token);
     }
@@ -145,10 +127,6 @@ export function processBatchMessage(
   while (offset < batchData.length) {
     // Need at least 5 bytes for an item header (1 type + 4 length)
     if (offset + PROTOCOL_HEADER_SIZE > batchData.length) {
-      hello.server.error("Incomplete batch item header", {
-        offset,
-        batchDataLength: batchData.length,
-      });
       break;
     }
 
@@ -164,11 +142,6 @@ export function processBatchMessage(
 
     // Check if we have the complete item
     if (offset + itemLength > batchData.length) {
-      hello.server.error("Incomplete batch item data", {
-        offset,
-        itemLength,
-        batchDataLength: batchData.length,
-      });
       break;
     }
 
@@ -181,8 +154,6 @@ export function processBatchMessage(
     // Move to the next item
     offset += itemLength;
   }
-
-  hello.server.debug(`Processing ${items.length} items from batch`);
 
   // Process each item in the batch
   for (const item of items) {
@@ -220,16 +191,6 @@ export function handleData(socket: Socket<SocketData>, data: any): void {
     // Process complete messages
     processBuffer(socket);
   } catch (err) {
-    hello.server.error(
-      "Error processing data:",
-      { sessionId: socket.data.sessionId, dataLength: data?.length || 0 },
-      err instanceof Error ? err : new Error(String(err))
-    );
-    recordOperation(
-      "server",
-      "socket-data-processing",
-      performance.now() - startTime,
-      true
-    );
+    console.error(err);
   }
 }

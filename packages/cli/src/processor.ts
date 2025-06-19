@@ -8,7 +8,12 @@ import {
   type TknData,
 } from "tkn-client";
 import type { CliOptions, ProcessingStats } from "./types.js";
-import { detectFileFormat, streamFileInChunks } from "./file-utils.js";
+import {
+  detectFileFormat,
+  streamFileInChunks,
+  streamTextFileByCharacter,
+  streamJsonFile,
+} from "./file-utils.js";
 import { sendBatch } from "./client.js";
 
 export async function processFile(
@@ -32,42 +37,75 @@ export async function processFile(
   let byteCount = 0;
   let batch: Array<{ type: TknMessageType; data: TknData }> = [];
 
-  for await (const chunk of streamFileInChunks(filePath, options.chunkSize)) {
-    chunkCount++;
-    byteCount += chunk.length;
+  if (format === "text") {
+    // Stream character by character for text files
+    for await (const char of streamTextFileByCharacter(filePath)) {
+      chunkCount++;
+      byteCount += Buffer.byteLength(char, "utf8");
 
-    let messageData: TknData;
-    let messageType: TknMessageType;
+      batch.push({
+        type: TYPE_STRING,
+        data: char,
+      });
 
-    if (format === "json") {
-      try {
-        messageData = JSON.parse(new TextDecoder().decode(chunk));
-        messageType = TYPE_JSON;
-      } catch {
-        // Fallback to text if JSON parsing fails
-        messageData = new TextDecoder().decode(chunk);
-        messageType = TYPE_STRING;
+      // Send batch when it reaches the configured size
+      if (batch.length >= options.batchSize) {
+        await sendBatch(
+          batch,
+          client,
+          options,
+          chunkCount - batch.length + 1,
+          chunkCount
+        );
+        batch = [];
       }
-    } else if (format === "text") {
-      messageData = new TextDecoder().decode(chunk);
-      messageType = TYPE_STRING;
-    } else {
-      messageData = chunk;
-      messageType = TYPE_BINARY;
     }
+  } else if (format === "json") {
+    // Stream JSON objects individually
+    for await (const jsonObj of streamJsonFile(filePath)) {
+      chunkCount++;
+      const jsonStr = JSON.stringify(jsonObj);
+      byteCount += Buffer.byteLength(jsonStr, "utf8");
 
-    batch.push({ type: messageType, data: messageData });
+      batch.push({
+        type: TYPE_JSON,
+        data: jsonObj,
+      });
 
-    // Send batch when it reaches the configured size
-    if (batch.length >= options.batchSize) {
-      await sendBatch(
-        batch,
-        client,
-        options,
-        chunkCount - batch.length + 1,
-        chunkCount
-      );
-      batch = [];
+      // Send batch when it reaches the configured size
+      if (batch.length >= options.batchSize) {
+        await sendBatch(
+          batch,
+          client,
+          options,
+          chunkCount - batch.length + 1,
+          chunkCount
+        );
+        batch = [];
+      }
+    }
+  } else {
+    // Binary files - stream in chunks as before
+    for await (const chunk of streamFileInChunks(filePath, options.chunkSize)) {
+      chunkCount++;
+      byteCount += chunk.length;
+
+      batch.push({
+        type: TYPE_BINARY,
+        data: chunk,
+      });
+
+      // Send batch when it reaches the configured size
+      if (batch.length >= options.batchSize) {
+        await sendBatch(
+          batch,
+          client,
+          options,
+          chunkCount - batch.length + 1,
+          chunkCount
+        );
+        batch = [];
+      }
     }
   }
 
