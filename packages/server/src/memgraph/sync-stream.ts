@@ -196,10 +196,38 @@ export class SyncStream {
     // Process up to 500 token pairs to avoid transaction size limits
     let processedPairs = 0;
     while (this.tokenBuffer.length >= 2 && processedPairs < 500) {
-      const tkn1 = this.tokenBuffer.shift()!;
-      const tkn2 = this.tokenBuffer[0]!;
+      // Get both tokens before modifying the buffer
+      const tkn1 = this.tokenBuffer[0];
+      const tkn2 = this.tokenBuffer[1];
+
+      // Skip tokens with empty hashes
+      if (
+        !tkn1.hashes ||
+        tkn1.hashes.length === 0 ||
+        !tkn2.hashes ||
+        tkn2.hashes.length === 0
+      ) {
+        console.warn(
+          `Skipping token pair with empty hashes: tkn1=${
+            tkn1.hashes?.length || 0
+          }, tkn2=${tkn2.hashes?.length || 0}`
+        );
+        this.tokenBuffer.shift();
+        continue;
+      }
+
+      // Remove the first token (keeping the second for the next pair)
+      this.tokenBuffer.shift();
 
       const tokenData = this.prepareTokenData(tkn1, tkn2);
+
+      // Skip pairs with empty encoded values
+      if (!tokenData.tkn1Value || !tokenData.tkn2Value) {
+        console.warn(
+          `Skipping token pair with empty encoded values: tkn1="${tokenData.tkn1Value}", tkn2="${tokenData.tkn2Value}"`
+        );
+        continue;
+      }
 
       // Add token pair to batch
       pairBatch.push({
@@ -229,6 +257,10 @@ export class SyncStream {
     dictBatch: Array<{ key: string; value: string }>
   ): Promise<void> {
     if (dictBatch.length === 0) return;
+
+    console.info(
+      `Storing ${dictBatch.length} ValueDictionary entries for tenant ${this.tenantId}`
+    );
 
     await tx.run(
       `
@@ -263,6 +295,23 @@ export class SyncStream {
       MERGE (tkn2:Tkn:$tid {value: pair.tkn2v})
       ON CREATE SET tkn2.lookupKeys = pair.tkn2k
       MERGE (tkn1)-[:D1 {idx: pair.tkn1idx, session: $sid}]->(tkn2)
+      
+      // Create relationships between tokens and their value dictionaries
+      WITH tkn1, tkn2, pair
+      CALL {
+        WITH tkn1, pair
+        WITH tkn1, split(pair.tkn1k, '|') as keys
+        UNWIND keys as key
+        MATCH (dict:ValueDictionary:$tid {key: key})
+        MERGE (tkn1)-[:HAS_VALUE]->(dict)
+      }
+      CALL {
+        WITH tkn2, pair
+        WITH tkn2, split(pair.tkn2k, '|') as keys
+        UNWIND keys as key
+        MATCH (dict:ValueDictionary:$tid {key: key})
+        MERGE (tkn2)-[:HAS_VALUE]->(dict)
+      }
       `,
       {
         pairBatch,
@@ -277,6 +326,16 @@ export class SyncStream {
     const tkn2Value = this.encodeHashesForStorage(tkn2.hashes);
     const tkn1Data = this.createStorageMappings(tkn1.hashes);
     const tkn2Data = this.createStorageMappings(tkn2.hashes);
+
+    // Debug: Log if we have empty values
+    if (!tkn1Value || !tkn2Value) {
+      console.warn(
+        `Empty token values detected: tkn1="${tkn1Value}", tkn2="${tkn2Value}"`
+      );
+      console.warn(
+        `Token hashes: tkn1=${tkn1.hashes.length} hashes, tkn2=${tkn2.hashes.length} hashes`
+      );
+    }
 
     return {
       tkn1Value,
@@ -310,5 +369,142 @@ export class SyncStream {
 
   private async handleTransactionError(tx: any): Promise<void> {
     await tx.rollback();
+  }
+
+  /**
+   * Flush remaining tokens in buffer when connection closes
+   * Ensures all tokens are processed, including the final one
+   */
+  async flush(): Promise<void> {
+    if (this.tokenBuffer.length === 0) {
+      return;
+    }
+
+    console.info(
+      `Flushing ${this.tokenBuffer.length} remaining tokens for session ${this.sessionId}`
+    );
+
+    const session = this.driver.session();
+    const tx = session.beginTransaction();
+
+    try {
+      // Process all complete pairs first
+      const batchData = this.prepareBatchData();
+
+      if (batchData.pairBatch.length > 0) {
+        console.info(
+          `Processing ${batchData.pairBatch.length} token pairs during flush`
+        );
+        await this.storeDictionaryEntriesBatch(tx, batchData.dictBatch);
+        await this.storeTokenRelationshipsBatch(tx, batchData.pairBatch);
+      }
+
+      // Handle any remaining single token by connecting it to the last processed token
+      if (this.tokenBuffer.length === 1) {
+        const finalToken = this.tokenBuffer[0];
+
+        // Skip final token if it has empty hashes
+        if (!finalToken.hashes || finalToken.hashes.length === 0) {
+          console.warn(
+            `Skipping final token with empty hashes: ${
+              finalToken.hashes?.length || 0
+            }`
+          );
+          this.tokenBuffer = [];
+        } else {
+          console.info("Processing final single token during flush");
+          await this.processFinalTokenWithConnection(tx, finalToken);
+          // Clear the buffer
+          this.tokenBuffer = [];
+        }
+      }
+
+      await tx.commit();
+      console.info(`Flush completed for session ${this.sessionId}`);
+    } catch (error) {
+      console.error(`Error during flush for session ${this.sessionId}:`, error);
+      await this.handleTransactionError(tx);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+
+  private async processFinalTokenWithConnection(
+    tx: any,
+    finalToken: OutputToken
+  ): Promise<void> {
+    const finalTokenData = this.prepareFinalTokenData(finalToken);
+
+    // Store dictionary entries for the final token
+    if (finalTokenData.dictBatch.length > 0) {
+      await this.storeDictionaryEntriesBatch(tx, finalTokenData.dictBatch);
+    }
+
+    // Store the final token and connect it to the most recently processed token
+    await tx.run(
+      `
+      // First, create or get the final token
+      MERGE (finalTkn:Tkn:$tid {value: $finalTokenValue})
+      ON CREATE SET finalTkn.lookupKeys = $finalLookupKeys
+      
+      // Find the token with the highest index from this session
+      WITH finalTkn
+      MATCH ()-[r:D1 {session: $sid}]->(prevTkn:Tkn:$tid)
+      WITH finalTkn, prevTkn, r.idx as idx
+      ORDER BY idx DESC
+      LIMIT 1
+      
+      // Create relationship from the previous token to the final token
+      MERGE (prevTkn)-[:D1 {idx: $finalIdx, session: $sid}]->(finalTkn)
+      
+      // Create relationships between final token and its value dictionaries
+      WITH finalTkn
+      WITH finalTkn, split($finalLookupKeys, '|') as keys
+      UNWIND keys as key
+      MATCH (dict:ValueDictionary:$tid {key: key})
+      MERGE (finalTkn)-[:HAS_VALUE]->(dict)
+      `,
+      {
+        finalTokenValue: finalTokenData.tokenValue,
+        finalLookupKeys: finalTokenData.tokenData.keys,
+        finalIdx: finalToken.idx,
+        sid: this.sessionId,
+        tid: this.tenantId,
+      }
+    );
+  }
+
+  /**
+   * Get the current buffer length for monitoring
+   */
+  getBufferLength(): number {
+    return this.tokenBuffer.length;
+  }
+
+  private prepareFinalTokenData(token: OutputToken): {
+    tokenValue: string;
+    tokenData: {
+      keys: string;
+      valueMappings: Array<{ key: string; value: string }>;
+    };
+    dictBatch: Array<{ key: string; value: string }>;
+  } {
+    const tokenValue = this.encodeHashesForStorage(token.hashes);
+    const tokenData = this.createStorageMappings(token.hashes);
+    const dictBatch: Array<{ key: string; value: string }> = [];
+
+    // Add dictionary entries for the final token
+    for (const mapping of tokenData.valueMappings) {
+      if (this.isValidMapping(mapping)) {
+        dictBatch.push(mapping);
+      }
+    }
+
+    return {
+      tokenValue,
+      tokenData,
+      dictBatch,
+    };
   }
 }

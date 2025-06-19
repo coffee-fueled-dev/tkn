@@ -66,8 +66,27 @@ export const TknServer = () => {
         // Track connection metrics
         incrementConnections();
       },
-      close() {
+      async close(socket) {
         console.info("Connection closed");
+
+        // Flush any remaining tokens in the sync stream before closing
+        if (socket.data?.syncStream) {
+          const bufferLength = socket.data.syncStream.getBufferLength();
+          if (bufferLength > 0) {
+            console.info(
+              `Flushing ${bufferLength} remaining tokens before connection close`
+            );
+            try {
+              await socket.data.syncStream.flush();
+            } catch (err) {
+              console.error(
+                "Error flushing sync stream on connection close:",
+                err
+              );
+            }
+          }
+        }
+
         decrementConnections();
       },
       error(err) {

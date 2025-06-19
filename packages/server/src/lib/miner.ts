@@ -1,6 +1,5 @@
 import { LRUCache } from "lru-cache";
-import type { HashedValue } from "./cyrb53";
-import { cyrb53 } from "./cyrb53";
+import { type HashedValue, cyrb53 } from "./cyrb53";
 
 // Define the type for the token processed by the tknMiner
 export interface OutputToken {
