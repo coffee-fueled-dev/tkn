@@ -8,7 +8,7 @@ import { Driver } from "neo4j-driver";
 import { hello } from "../metrics/logs";
 import type { OutputToken } from "../lib/miner";
 import { SymbolTable } from "../lib/symbol-table";
-import { createHash } from "crypto";
+
 import { recordOperation } from "../metrics";
 import type { HashedValue } from "../lib/cyrb53";
 
@@ -69,20 +69,15 @@ export class SyncStream {
     return String(value);
   }
 
-  private createValueLookupKey(value: any): string {
-    const stringValue = this.convertToString(value);
-    return createHash("md5").update(stringValue).digest("hex");
-  }
-
-  private convertToString(value: any): string {
-    if (typeof value === "object" && value !== null) {
-      try {
-        return JSON.stringify(value);
-      } catch (e) {
-        return String(value);
-      }
+  private createValueLookupKey(
+    value: any,
+    index: number,
+    hashedValues: HashedValue[]
+  ): string {
+    if (index < hashedValues.length) {
+      return Buffer.from(hashedValues[index]).toString("base64");
     }
-    return String(value);
+    return `fallback_${index}`;
   }
 
   private createStorageMappings(hashes: HashedValue[]): {
@@ -95,8 +90,8 @@ export class SyncStream {
       const originalValues = this.symbolTable.getDataArray(hashes);
       const lookupEntries: Array<{ key: string; value: string }> = [];
 
-      const lookupKeys = originalValues.map((value) => {
-        const key = this.createValueLookupKey(value);
+      const lookupKeys = originalValues.map((value, index) => {
+        const key = this.createValueLookupKey(value, index, hashes);
         const stringValue = this.safeStringifyValue(value);
         lookupEntries.push({ key, value: stringValue });
         return key;
