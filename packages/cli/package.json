@@ -1,0 +1,25 @@
+{
+  "name": "tkn-cli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "tkn-send": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outfile tkn-send --target bun",
+    "dev": "bun --watch src/index.ts",
+    "help": "bun src/index.ts --help",
+    "test": "bun src/index.ts --help",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.2",
+    "tkn-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "tkn-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun --filter='*' run build",
+    "dev:server": "bun --filter=tkn-server run dev",
+    "dev:client": "bun --filter=tkn-client run dev",
+    "dev:cli": "bun --filter=tkn-cli run dev",
+    "test:server": "bun --filter=tkn-server run start",
+    "test:client": "bun --filter=tkn-client run example:demo",
+    "test:cli": "bun --filter=tkn-cli run help",
+    "test:cli-dry": "bun packages/cli/src/index.ts \"test-files/*.txt\" --dry-run --verbose",
+    "test:cli-files": "bun packages/cli/src/index.ts \"test-files/*\" --dry-run",
+    "install:all": "bun install",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "example:batch": "cd packages/client && bun examples/tkn-batch-example.ts",
+    "example:browser": "cd packages/client && open examples/browser-example.html"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "packageManager": "bun@1.2.1"
+}
