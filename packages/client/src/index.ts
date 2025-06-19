@@ -1,9 +1,12 @@
 /**
- * TKN Client Library - Unified client for TKN protocol
- * Works in both browser and Node.js/Bun environments
+ * TKN Client Library - Focused clients for different environments
+ *
+ * Choose the appropriate client for your environment:
+ * - TknBrowserClient: For browser/WebSocket environments
+ * - TknNodeClient: For Node.js/Bun/server environments
  */
 
-// Re-export common types and utility functions
+// Protocol utilities and types
 export {
   PROTOCOL_HEADER_SIZE,
   TYPE_JSON,
@@ -13,27 +16,12 @@ export {
   encodeMessage,
 } from "./common";
 
-export type {
-  TknMessageType,
-  TknData,
-  TknClientOptionsBase,
-  TknBatchItem,
-} from "./common";
+export type { TknMessageType, TknData, TknBatchItem } from "./common";
 
-// Re-export client implementation and types
-export {
-  isBrowser,
-  isNode,
-  isBun,
-  TknClientBase,
-  TknBrowserClient,
-  TknNodeClient,
-  createTknClient,
-  TknClient, // Default client based on environment
-} from "./client";
+// Browser client
+export { TknBrowserClient } from "./browser";
+export type { TknBrowserOptions } from "./browser";
 
-export type {
-  TknBrowserOptions,
-  TknNodeOptions,
-  TknClientOptions,
-} from "./client";
+// Node/Bun client
+export { TknNodeClient } from "./node";
+export type { TknNodeOptions } from "./node";

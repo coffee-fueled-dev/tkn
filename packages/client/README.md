@@ -1,113 +1,131 @@
-# TKN Client
+# TKN Client Library
 
-A lightweight, cross-platform client library for communicating with the TKN server using the TKN binary protocol. The client provides an easy-to-use API for both Node.js/Bun and browser environments.
+Focused, self-documenting clients for the TKN binary protocol. Choose the right client for your environment.
 
-## Role in the TKN System
+## Architecture
 
-The TKN Client serves as the communication layer for applications that need to interact with the TKN server:
+This library provides **two focused clients** instead of a unified abstraction:
 
-- Implements the TKN binary protocol for efficient message transmission
-- Provides a unified API for both Node.js/Bun and browser environments
-- Handles connection management, reconnection, and error handling
-- Offers easy methods for sending different types of data (JSON, string, binary, batch)
+- **`TknBrowserClient`** - WebSocket-based client for browser environments
+- **`TknNodeClient`** - Socket-based client for Node.js/Bun server environments
 
 ## Installation
 
-To install dependencies:
-
 ```bash
-bun install
+bun add @tkn/client
 ```
 
 ## Usage
 
-### Node.js/Bun Client
+### Browser Client
 
 ```typescript
-import { TknNodeClient } from "./src/client";
+import { TknBrowserClient } from "@tkn/client/browser";
+
+const client = new TknBrowserClient({
+  url: "ws://localhost:4001",
+  onConnect: (client) => console.log("Connected!"),
+  onData: (data) => console.log("Received:", data),
+  onError: (error) => console.error("Error:", error),
+  onClose: (event) => console.log("Disconnected"),
+});
+
+await client.connect();
+
+// Send different data types
+client.sendJson({ message: "Hello", timestamp: Date.now() });
+client.sendString("Hello TKN!");
+client.sendBinary(new Uint8Array([1, 2, 3, 4]));
+
+// Send mixed batch
+client.sendBatch([
+  { type: TYPE_STRING, data: "First item" },
+  { type: TYPE_JSON, data: { batch: true } },
+  { type: TYPE_BINARY, data: new Uint8Array([5, 6, 7, 8]) },
+]);
+```
+
+### Node/Bun Client
+
+```typescript
+import { TknNodeClient } from "@tkn/client/node";
 
 const client = new TknNodeClient({
   host: "localhost",
-  port: 8080,
-  onConnect: (client) => {
-    console.log("Connected to TKN server!");
-
-    // Send JSON data
-    client.sendJson({ type: "data", value: 42 });
-
-    // Send string data
-    client.sendString("Hello TKN!");
-  },
-  onError: (error) => {
-    console.error("Connection error:", error);
-  },
+  port: 4001,
+  onConnect: (client) => console.log("Connected!"),
+  onData: (data) => console.log("Received:", data),
+  onError: (error) => console.error("Error:", error),
+  onClose: () => console.log("Disconnected"),
 });
 
-client.connect();
+await client.connect();
+
+// Same API as browser client
+client.sendJson({ message: "Hello from server!" });
+client.sendString("Hello TKN!");
+client.sendBinary(new Uint8Array([1, 2, 3, 4]));
 ```
 
-### Browser Client
+## Protocol Types
 
-```javascript
-import { TknBrowserClient } from "./src/client";
+```typescript
+import { TYPE_JSON, TYPE_STRING, TYPE_BINARY, TYPE_BATCH } from "@tkn/client";
 
-const client = new TknBrowserClient({
-  url: "ws://localhost:8080",
-  onConnect: (client) => {
-    console.log("Connected to TKN server!");
-
-    // Send batch data
-    client.sendBatch([
-      { type: 1, data: { event: "login" } },
-      { type: 2, data: "User login successful" },
-    ]);
-  },
-});
-
-client.connect();
+// Message types for batch operations
+const batchItems = [
+  { type: TYPE_STRING, data: "text" },
+  { type: TYPE_JSON, data: { key: "value" } },
+  { type: TYPE_BINARY, data: new Uint8Array([1, 2, 3]) },
+];
 ```
 
-## API Reference
+## Benefits of Focused Clients
 
-### Client Creation
+### ✅ **Clear Intent**
 
-- `new TknNodeClient(options)` - Create a Node.js/Bun client
-- `new TknBrowserClient(options)` - Create a browser client
+- Explicitly choose the right client for your environment
+- No runtime environment detection overhead
+- Self-documenting binary protocol operations
 
-### Connection Methods
+### ✅ **Smaller Bundles**
 
-- `connect()` - Connect to the TKN server
-- `disconnect()` - Disconnect from the server
-- `isConnected()` - Check if connected to the server
+- Browser builds only include WebSocket code
+- Server builds only include socket code
+- Better tree-shaking and optimization
 
-### Sending Methods
+### ✅ **Simpler APIs**
 
-- `sendJson(data)` - Send JSON data (type 1)
-- `sendString(data)` - Send string data (type 2)
-- `sendBinary(data)` - Send binary data (type 3)
-- `sendBatch(items)` - Send batch data (type 4) containing multiple items
+- No union types or optional properties
+- Platform-specific optimizations
+- Focused error handling
 
-### Configuration Options
+### ✅ **Better Testing**
 
-- `host` - Server hostname (Node.js/Bun client)
-- `port` - Server port (Node.js/Bun client)
-- `url` - WebSocket URL (Browser client)
-- `onConnect` - Connection callback
-- `onData` - Data received callback
-- `onError` - Error callback
-- `onClose` - Connection closed callback
-- `autoReconnect` - Enable automatic reconnection
-- `reconnectInterval` - Reconnection attempt interval
+- Each client can be tested independently
+- No cross-platform compatibility issues
+- Clear separation of concerns
 
 ## Examples
 
-See the `examples/` directory for more usage examples.
+- **Browser**: `examples/browser-example.html` - Interactive HTML example
+- **Node/Bun**: `examples/tkn-batch-example.ts` - File processing example
 
-## Running the Examples
+## Binary Protocol
 
-```bash
-bun run examples/tkn-client-demo.ts
+The TKN protocol uses a 5-byte header format:
+
 ```
++------+----------------+------------------+
+| Type | Length (4 bytes) | Payload         |
++------+----------------+------------------+
+```
+
+- **Type**: 1=JSON, 2=STRING, 3=BINARY, 4=BATCH
+- **Length**: Big-endian 32-bit payload size
+- **Payload**: Variable-length data
+
+All encoding/decoding is handled automatically by the focused clients.
 
 ## License
 

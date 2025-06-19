@@ -19,7 +19,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { BatchedFileReader } from "./batched-file-reader";
 import { BatchEmitter } from "./batch-emitter";
-import { TknClient } from "../src/client";
+import { TknNodeClient } from "../src/node";
 import { TYPE_STRING, TYPE_BATCH, type TknBatchItem } from "../src/common";
 
 // Add Node.js process type
@@ -102,7 +102,7 @@ if (testMode) {
   client = mockClient;
   startBatchProcessing();
 } else {
-  client = new TknClient({
+  client = new TknNodeClient({
     host: "localhost",
     port: 4001,
 
@@ -114,12 +114,12 @@ if (testMode) {
       startBatchProcessing();
     },
 
-    onData: (data) => {
+    onData: (data: Uint8Array) => {
       const response = new TextDecoder().decode(data);
       console.log(`  ← Server: ${response}`);
     },
 
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("❌ Error:", error);
       process.exit(1);
     },
