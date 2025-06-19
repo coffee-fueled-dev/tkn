@@ -1,0 +1,82 @@
+====== TKN File Streaming Example - Medium Test File ======
+
+This is a medium-sized test file for demonstrating the TKN file streaming functionality.
+It contains multiple paragraphs and repetitive content to create a file that's large enough
+to see progress updates during streaming, but small enough to complete quickly.
+
+=== Section 1: Protocol Description ===
+
+The TKN protocol is a simple binary protocol with the following format:
+
++------+----------------+-----------------------+
+| Type | Length (4byte) | Payload (variable)    |
++------+----------------+-----------------------+
+   1B        4B             Length bytes
+
+Message Types:
+- 1: JSON data
+- 2: String data
+- 3: Binary data
+
+The length field is a 4-byte big-endian integer that specifies the length of the payload in bytes.
+
+=== Section 2: Test Data ===
+
+Below is some repetitive content to increase the file size:
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla facilisi. 
+Sed at tortor in dolor porttitor ultrices. Etiam vitae felis vel velit 
+tristique lobortis. Fusce in sem ut nisi posuere venenatis. Duis vel 
+auctor magna. Nunc commodo nec turpis at dictum. Aliquam dictum lorem 
+non ligula rhoncus, eu lacinia eros tempus. Nullam euismod fringilla 
+tortor, in placerat ipsum sagittis quis.
+
+Phasellus nec dui vel justo venenatis volutpat. Aenean ullamcorper
+dignissim urna, at tristique tellus euismod vel. Maecenas ultricies,
+magna eu lobortis vulputate, ante odio viverra lacus, ac varius turpis
+ipsum quis purus. Vivamus eu dictum lacus, ac semper magna. Praesent
+rhoncus vehicula enim, ac dapibus mauris varius nec.
+
+=== Section 3: Streaming Process ===
+
+When streaming this file:
+1. The file is opened as a read stream
+2. It's piped through a transform that adds delays between chunks
+3. Each chunk is sent to the TKN server using the client library
+4. Progress is tracked and displayed periodically
+5. Upon completion, statistics are shown (bytes sent, time, rate)
+
+=== Section 4: More Test Data ===
+
+Below is more repetitive content to further increase the file size:
+
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+0123456789
+
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+0123456789
+
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+0123456789
+
+=== Section 5: JSON Example ===
+
+The TKN protocol can transmit JSON data. Here's an example:
+
+{
+  "type": "sensor",
+  "values": [42, 17, 23, 84],
+  "timestamp": 1647428571239,
+  "device_id": "sensor-x42-9a",
+  "location": "building-A",
+  "metadata": {
+    "firmware": "v2.1.4",
+    "battery": "87%",
+    "uptime": 128743
+  }
+}
+
+=== End of Test File === 

@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Memgraph Database
+  memgraph:
+    image: memgraph/memgraph:2.15.1
+    container_name: tkn-memgraph
+    ports:
+      - "7687:7687"
+      - "7444:7444"  # Memgraph Lab (web interface)
+    environment:
+      - MEMGRAPH_USER=memgraph
+      - MEMGRAPH_PASS=memgraph
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+      - memgraph_log:/var/log/memgraph
+      - memgraph_etc:/etc/memgraph
+    networks:
+      - tkn-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7444/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # TKN Server Application
+  tkn-server:
+    build:
+      context: ./packages/server
+      dockerfile: Dockerfile
+    container_name: tkn-server
+    ports:
+      - "4000:4000"    # TKN Server port (includes metrics at /metrics)
+    environment:
+      - NODE_ENV=production
+      - TKN_PORT=4000
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_USER=memgraph
+      - MEMGRAPH_PASS=memgraph
+      - MEMGRAPH_DB_NAME=memgraph
+    depends_on:
+      memgraph:
+        condition: service_healthy
+    networks:
+      - tkn-network
+    restart: unless-stopped
+    volumes:
+      - ./packages/server/src:/app/src:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: tkn-prometheus
+    ports:
+      - "9091:9090"    # Prometheus web UI
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    depends_on:
+      tkn-server:
+        condition: service_healthy
+    networks:
+      - tkn-network
+    restart: unless-stopped
+
+  # Grafana Dashboard (Optional)
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: tkn-grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - tkn-network
+    restart: unless-stopped
+
+volumes:
+  memgraph_data:
+  memgraph_log:
+  memgraph_etc:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  tkn-network:
+    driver: bridge 

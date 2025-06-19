@@ -1,0 +1,20 @@
+{
+  "name": "tkn-client",
+  "version": "1.0.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir ./dist --target node",
+    "example:batch": "bun examples/batch-emitter.ts",
+    "example:file-reader": "bun examples/batched-file-reader.ts",
+    "example:demo": "bun examples/tkn-batch-example.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
