@@ -206,18 +206,28 @@ export class SyncStream {
     const startTime = performance.now();
     const session = this.driver.session();
     const tx = session.beginTransaction();
-    let txCounter = 0;
 
     hello.syncStream.debug("Opened Neo4j session and transaction");
 
     try {
-      while (this.canProcessTokenPair() && txCounter < 501) {
-        await this.processTokenPair(tx);
-        txCounter++;
+      const batchData = this.prepareBatchData();
+
+      if (batchData.pairBatch.length === 0) {
+        hello.syncStream.debug("No token pairs to process");
+        await tx.commit();
+        return;
       }
 
-      hello.syncStream.debug("Committing transaction, txCounter:", {
-        txCounter,
+      hello.syncStream.debug("Processing batch with UNWIND:", {
+        tokenPairs: batchData.pairBatch.length,
+        dictionaryEntries: batchData.dictBatch.length,
+      });
+
+      await this.storeDictionaryEntriesBatch(tx, batchData.dictBatch);
+      await this.storeTokenRelationshipsBatch(tx, batchData.pairBatch);
+
+      hello.syncStream.debug("Committing transaction, pairs processed:", {
+        pairCount: batchData.pairBatch.length,
       });
       await tx.commit();
       recordOperation(
@@ -236,21 +246,115 @@ export class SyncStream {
     }
   }
 
-  private canProcessTokenPair(): boolean {
-    return this.tokenBuffer.length >= 2;
+  private prepareBatchData(): {
+    pairBatch: Array<{
+      tkn1v: string;
+      tkn2v: string;
+      tkn1k: string;
+      tkn2k: string;
+      tkn1idx: number;
+    }>;
+    dictBatch: Array<{ key: string; value: string }>;
+  } {
+    const pairBatch: Array<{
+      tkn1v: string;
+      tkn2v: string;
+      tkn1k: string;
+      tkn2k: string;
+      tkn1idx: number;
+    }> = [];
+    const dictBatch: Array<{ key: string; value: string }> = [];
+    const seenDictKeys = new Set<string>();
+
+    // Process up to 500 token pairs to avoid transaction size limits
+    let processedPairs = 0;
+    while (this.tokenBuffer.length >= 2 && processedPairs < 500) {
+      const tkn1 = this.tokenBuffer.shift()!;
+      const tkn2 = this.tokenBuffer[0]!;
+
+      const tokenData = this.prepareTokenData(tkn1, tkn2);
+
+      // Add token pair to batch
+      pairBatch.push({
+        tkn1v: tokenData.tkn1Value,
+        tkn2v: tokenData.tkn2Value,
+        tkn1k: tokenData.tkn1Data.keys,
+        tkn2k: tokenData.tkn2Data.keys,
+        tkn1idx: tokenData.tkn1Idx,
+      });
+
+      // Add dictionary entries to batch (deduplicating by key)
+      for (const mapping of tokenData.valueMappings) {
+        if (this.isValidMapping(mapping) && !seenDictKeys.has(mapping.key)) {
+          dictBatch.push(mapping);
+          seenDictKeys.add(mapping.key);
+        }
+      }
+
+      processedPairs++;
+      hello.syncStream.debug(
+        "Token pair prepared for batch:",
+        tokenData.logData
+      );
+    }
+
+    return { pairBatch, dictBatch };
   }
 
-  private async processTokenPair(tx: any): Promise<void> {
-    const tkn1 = this.tokenBuffer.shift()!;
-    const tkn2 = this.tokenBuffer[0]!;
+  private async storeDictionaryEntriesBatch(
+    tx: any,
+    dictBatch: Array<{ key: string; value: string }>
+  ): Promise<void> {
+    if (dictBatch.length === 0) return;
 
-    const tokenData = this.prepareTokenData(tkn1, tkn2);
+    hello.syncStream.debug("Storing dictionary entries with UNWIND:", {
+      count: dictBatch.length,
+    });
 
-    hello.syncStream.debug("Token pair values:", tokenData.logData);
+    await tx.run(
+      `
+      UNWIND $dictBatch as entry
+      MERGE (dict:ValueDictionary:$tid {key: entry.key})
+      ON CREATE SET dict.value = entry.value
+      `,
+      {
+        dictBatch,
+        tid: this.tenantId,
+      }
+    );
+  }
 
-    await this.storeDictionaryEntries(tx, tokenData.valueMappings);
-    await this.storeTokenRelationship(tx, tokenData);
-    hello.syncStream.debug("Token pair processed, incrementing txCounter");
+  private async storeTokenRelationshipsBatch(
+    tx: any,
+    pairBatch: Array<{
+      tkn1v: string;
+      tkn2v: string;
+      tkn1k: string;
+      tkn2k: string;
+      tkn1idx: number;
+    }>
+  ): Promise<void> {
+    if (pairBatch.length === 0) return;
+
+    hello.syncStream.debug("Storing token relationships with UNWIND:", {
+      count: pairBatch.length,
+    });
+
+    await tx.run(
+      `
+      UNWIND $pairBatch as pair
+      MERGE (tkn1:Tkn:$tid {value: pair.tkn1v})
+      ON CREATE SET tkn1.lookupKeys = pair.tkn1k
+      MERGE (tkn2:Tkn:$tid {value: pair.tkn2v})
+      ON CREATE SET tkn2.lookupKeys = pair.tkn2k
+      MERGE (tkn1)-[:D1 {idx: pair.tkn1idx, session: $sid}]->(tkn2)
+      `,
+      {
+        pairBatch,
+        sid: this.sessionId,
+        tid: this.tenantId,
+      }
+    );
   }
 
   private prepareTokenData(tkn1: OutputToken, tkn2: OutputToken) {
@@ -281,53 +385,11 @@ export class SyncStream {
     };
   }
 
-  private async storeDictionaryEntries(
-    tx: any,
-    valueMappings: Array<{ key: string; value: string }>
-  ): Promise<void> {
-    for (const mapping of valueMappings) {
-      if (this.isValidMapping(mapping)) {
-        await tx.run(
-          `
-          MERGE (dict:ValueDictionary:$tid {key: $dictKey})
-          ON CREATE SET dict.value = $dictValue
-          `,
-          {
-            tid: this.tenantId,
-            dictKey: mapping.key,
-            dictValue: mapping.value,
-          }
-        );
-      }
-    }
-  }
-
   private isValidMapping(mapping: { key: string; value: string }): boolean {
     return !(
       !mapping.key ||
       mapping.key === "error" ||
       mapping.key === "unavailable"
-    );
-  }
-
-  private async storeTokenRelationship(tx: any, tokenData: any): Promise<void> {
-    await tx.run(
-      `
-        MERGE (tkn1:Tkn:$tid {value: $tkn1v})
-        ON CREATE SET tkn1.lookupKeys = $tkn1k
-        MERGE (tkn2:Tkn:$tid {value: $tkn2v})
-        ON CREATE SET tkn2.lookupKeys = $tkn2k
-        MERGE (tkn1)-[:D1 {idx: $tkn1idx, session: $sid}]->(tkn2)
-      `,
-      {
-        sid: this.sessionId,
-        tid: this.tenantId,
-        tkn1v: tokenData.tkn1Value,
-        tkn2v: tokenData.tkn2Value,
-        tkn1k: tokenData.tkn1Data.keys,
-        tkn2k: tokenData.tkn2Data.keys,
-        tkn1idx: tokenData.tkn1Idx,
-      }
     );
   }
 
