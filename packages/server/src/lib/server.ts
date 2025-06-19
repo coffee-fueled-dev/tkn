@@ -46,19 +46,17 @@ export const TknServer = () => {
     },
   });
 
-  // Socket server for TKN data processing (different port)
   const socketServer = Bun.listen<SocketData>({
-    hostname: "localhost",
+    hostname: "0.0.0.0",
     port: variables.TKN_PORT + 1,
     socket: {
       data(socket, data) {
-        // Use the protocol handler to process incoming data
         handleData(socket, data);
       },
       open(socket) {
         const startTime = performance.now();
 
-        hello.server.debug("New connection");
+        hello.server.info("New connection");
         const sessionId = randomUUIDv7();
         const symbolTable = new SymbolTable();
         socket.data = {
@@ -80,7 +78,7 @@ export const TknServer = () => {
         );
       },
       close(socket) {
-        hello.server.debug("Connection closed");
+        hello.server.info("Connection closed");
         decrementConnections();
       },
       error(socket, err) {

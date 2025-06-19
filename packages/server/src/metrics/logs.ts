@@ -1,4 +1,4 @@
-import debug from "debug";
+import pino from "pino";
 import { variables } from "../util/environment";
 import * as promClient from "prom-client";
 
@@ -38,22 +38,27 @@ const logRateGauge = new promClient.Gauge({
 const logRateTracker = new Map<string, { count: number; lastReset: number }>();
 
 /**
- * Create debug patterns for different environments
+ * Create pino logger with appropriate configuration
  */
-function createDebugPatterns(
-  ns: readonly string[],
-  levels: readonly string[]
-): string {
-  const patterns: string[] = [];
-
-  for (const namespace of ns) {
-    for (const level of levels) {
-      patterns.push(`${namespace}:${level}`);
-    }
-  }
-
-  return patterns.join(",");
-}
+const pinoLogger = pino({
+  level: variables.NODE_ENV === "development" ? "debug" : "info",
+  transport:
+    variables.NODE_ENV === "development"
+      ? {
+          target: "pino-pretty",
+          options: {
+            colorize: true,
+            translateTime: "HH:MM:ss Z",
+            ignore: "pid,hostname",
+          },
+        }
+      : undefined,
+  formatters: {
+    level: (label) => {
+      return { level: label.toUpperCase() };
+    },
+  },
+});
 
 /**
  * Update log rate metrics
@@ -101,32 +106,41 @@ function recordLogMetrics(
  * Create logger interface for a specific namespace and level
  */
 function createLogger(namespace: string, level: string) {
-  const debugLogger = debug(`${namespace}:${level}`);
-
   return (message: string, meta?: Record<string, any>, error?: Error) => {
     // Record metrics first
     recordLogMetrics(namespace, level, message, error);
 
-    // Format the log message
-    let logMessage = message;
-
-    if (meta) {
-      logMessage += ` ${JSON.stringify(meta)}`;
-    }
+    // Create log object
+    const logObj: any = {
+      namespace,
+      message,
+      ...meta,
+    };
 
     if (error) {
-      logMessage += ` Error: ${error.message}`;
-      if (error.stack && variables.NODE_ENV === "development") {
-        logMessage += `\nStack: ${error.stack}`;
-      }
+      logObj.error = {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      };
     }
 
-    // Log using debug
-    debugLogger(logMessage);
-
-    // In production, also log errors to console for visibility
-    if (level === "error" && variables.NODE_ENV === "production") {
-      console.error(`[${namespace}:${level}] ${logMessage}`);
+    // Log using pino with appropriate level
+    switch (level) {
+      case "info":
+        pinoLogger.info(logObj, message);
+        break;
+      case "warn":
+        pinoLogger.warn(logObj, message);
+        break;
+      case "debug":
+        pinoLogger.debug(logObj, message);
+        break;
+      case "error":
+        pinoLogger.error(logObj, message);
+        break;
+      default:
+        pinoLogger.info(logObj, message);
     }
   };
 }
@@ -157,17 +171,6 @@ function initializeLoggers(ns: readonly string[], levels: readonly string[]) {
     };
   };
 }
-
-// Environment-specific patterns
-const patterns = {
-  development: createDebugPatterns(namespaces, logLevels),
-  production: createDebugPatterns(namespaces, ["error"] as const),
-};
-
-const DEBUG = patterns[variables.NODE_ENV];
-
-// Enable debugging immediately when this module is imported
-debug.enable(DEBUG);
 
 // Create the logger interface
 export const logger = initializeLoggers(namespaces, logLevels);

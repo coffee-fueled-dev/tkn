@@ -8,6 +8,7 @@ export async function connectToServer(
     const client = new TknNodeClient({
       host: options.host,
       port: options.port,
+      autoReconnect: false, // Disable auto-reconnect for CLI usage
       onConnect: () => {
         if (options.verbose) {
           console.log(

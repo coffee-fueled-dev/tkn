@@ -1,28 +1,33 @@
-version: '3.8'
-
 services:
   # Memgraph Database
   memgraph:
-    image: memgraph/memgraph:2.15.1
+    image: memgraph/memgraph-mage
     container_name: tkn-memgraph
     ports:
-      - "7687:7687"
-      - "7444:7444"  # Memgraph Lab (web interface)
+      - "${MEMGRAPH_BOLT_PORT:-7687}:7687"
+      - "${MEMGRAPH_LOG_PORT:-7444}:7444"
     environment:
-      - MEMGRAPH_USER=memgraph
-      - MEMGRAPH_PASS=memgraph
+      MEMGRAPH: "--memory-limit=1024"
     volumes:
       - memgraph_data:/var/lib/memgraph
-      - memgraph_log:/var/log/memgraph
-      - memgraph_etc:/etc/memgraph
     networks:
       - tkn-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7444/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+
+  # Memgraph Lab (separate container)
+  memgraph-lab:
+    image: memgraph/lab
+    container_name: tkn-lab
+    ports:
+      - "${MEMGRAPH_LAB_PORT:-3000}:3000"
+    environment:
+      QUICK_CONNECT_MG_HOST: memgraph
+      QUICK_CONNECT_MG_PORT: 7687
+    depends_on:
+      - memgraph
+    networks:
+      - tkn-network
+    restart: unless-stopped
 
   # TKN Server Application
   tkn-server:
@@ -31,17 +36,15 @@ services:
       dockerfile: Dockerfile
     container_name: tkn-server
     ports:
-      - "4000:4000"    # TKN Server port (includes metrics at /metrics)
+      - "4000:4000"    # TKN Server HTTP port (includes metrics at /metrics)
+      - "4001:4001"    # TKN Server socket port (data processing)
     environment:
       - NODE_ENV=production
       - TKN_PORT=4000
       - MEMGRAPH_URI=bolt://memgraph:7687
-      - MEMGRAPH_USER=memgraph
-      - MEMGRAPH_PASS=memgraph
       - MEMGRAPH_DB_NAME=memgraph
     depends_on:
-      memgraph:
-        condition: service_healthy
+      - memgraph
     networks:
       - tkn-network
     restart: unless-stopped
@@ -97,8 +100,6 @@ services:
 
 volumes:
   memgraph_data:
-  memgraph_log:
-  memgraph_etc:
   prometheus_data:
   grafana_data:
 
