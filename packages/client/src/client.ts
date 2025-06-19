@@ -58,11 +58,11 @@ export abstract class TknClientBase {
       onClose: options.onClose,
 
       // Browser defaults
-      url: options.url || "ws://localhost:8080",
+      url: options.url || "ws://localhost:4001",
 
       // Node/Bun defaults
       host: options.host || "localhost",
-      port: options.port || 8080,
+      port: options.port || 4001,
     };
   }
 

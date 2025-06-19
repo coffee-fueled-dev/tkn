@@ -104,7 +104,7 @@ if (testMode) {
 } else {
   client = new TknClient({
     host: "localhost",
-    port: 8080,
+    port: 4001,
 
     onConnect: () => {
       console.log("✅ Connected to TKN server!");

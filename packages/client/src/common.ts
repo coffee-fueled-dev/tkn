@@ -15,7 +15,7 @@ export type TknMessageType =
   | typeof TYPE_BINARY
   | typeof TYPE_BATCH; // Added batch type
 export type TknData = string | object | Uint8Array;
-export type TknBatchItem = { type: TknMessageType; data: TknData }; // New batch item type
+export type TknBatchItem = { type: TknMessageType; data: TknData };
 
 // Common interface for options - will be extended by platform-specific options
 export interface TknClientOptionsBase {

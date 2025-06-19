@@ -9,10 +9,16 @@ export {
   TYPE_JSON,
   TYPE_STRING,
   TYPE_BINARY,
+  TYPE_BATCH,
   encodeMessage,
 } from "./common";
 
-export type { TknMessageType, TknData, TknClientOptionsBase } from "./common";
+export type {
+  TknMessageType,
+  TknData,
+  TknClientOptionsBase,
+  TknBatchItem,
+} from "./common";
 
 // Re-export client implementation and types
 export {
