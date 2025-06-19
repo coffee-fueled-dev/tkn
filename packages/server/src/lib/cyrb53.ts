@@ -22,6 +22,28 @@ export function cyrb53(
   return createHashBuffer(h1, h2, hashSize);
 }
 
+export function cyrb53FromBytes(
+  data: Uint8Array,
+  seed = 0,
+  hashSize: number = 64
+): HashedValue {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+
+  for (let i = 0; i < data.length; i++) {
+    const byte = data[i];
+    h1 = Math.imul(h1 ^ byte, 2654435761);
+    h2 = Math.imul(h2 ^ byte, 1597334677);
+  }
+
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+
+  return createHashBuffer(h1, h2, hashSize);
+}
+
 function createHashBuffer(
   h1: number,
   h2: number,

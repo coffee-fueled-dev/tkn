@@ -95,8 +95,7 @@ export function processMessage(
       break;
 
     case TYPE_BINARY:
-      // For binary data, we can process it as individual bytes or as a whole
-      parsedData = Array.from(data);
+      parsedData = data;
       hello.server.debug("Received binary data");
       break;
 

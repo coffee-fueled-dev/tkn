@@ -4,7 +4,7 @@
  */
 
 import { LRUCache } from "lru-cache";
-import { type HashedValue, cyrb53 } from "./cyrb53";
+import { type HashedValue, cyrb53, cyrb53FromBytes } from "./cyrb53";
 
 export class SymbolTable {
   private table = new Map<string, any>();
@@ -42,6 +42,10 @@ export class SymbolTable {
   }
 
   private computeHash(data: any): HashedValue {
+    if (data instanceof Uint8Array) {
+      return this.computeBinaryHash(data);
+    }
+
     const inputStr =
       typeof data === "string" ? data : this.stringifyValue(data);
 
@@ -53,6 +57,25 @@ export class SymbolTable {
     const hashArray = cyrb53(inputStr, 0, this.hashSize);
     const hashClone = new Uint8Array(hashArray);
     this.valueToHashCache.set(inputStr, hashClone);
+
+    return hashClone;
+  }
+
+  private computeBinaryHash(data: Uint8Array): HashedValue {
+    // Use a binary-specific cache key to avoid string conversion
+    const cacheKey = `bin:${data.length}:${data[0] || 0}:${
+      data[data.length - 1] || 0
+    }`;
+
+    const cachedHash = this.valueToHashCache.get(cacheKey);
+    if (cachedHash !== undefined) {
+      return cachedHash;
+    }
+
+    // Hash bytes directly without string conversion (major optimization)
+    const hashArray = cyrb53FromBytes(data, 0, this.hashSize);
+    const hashClone = new Uint8Array(hashArray);
+    this.valueToHashCache.set(cacheKey, hashClone);
 
     return hashClone;
   }
@@ -79,11 +102,6 @@ export class SymbolTable {
     const key = this.createStorageKey(hash);
     this.storeValue(key, value);
     return hash;
-  }
-
-  getHashForBinary(data: Uint8Array): HashedValue {
-    const inputStr = Buffer.from(data).toString("base64");
-    return this.getHash(inputStr);
   }
 
   getHashBatch(values: any[]): HashedValue[] {
