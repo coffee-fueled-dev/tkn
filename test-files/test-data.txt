@@ -1,0 +1,5 @@
+Hello, TKN Server!
+This is a test file for the CLI tool.
+It contains multiple lines of text data.
+Each line will be processed and sent to the server.
+Perfect for testing the complete system! 
