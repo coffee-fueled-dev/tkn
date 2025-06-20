@@ -15,11 +15,11 @@ export const memgraphDriver = memgraph.driver(
 
 interface QueuedOperation {
   token: OutputToken;
-  callback: (error: Error | null, token: OutputToken | null) => void;
+  callback: (error: Error | null) => void;
 }
 
 export class MemgraphManager {
-  private sessionId = randomUUIDv7();
+  private sessionId: string;
   private tenantId: string;
   private driver: Driver;
   private symbolTable?: SymbolTable;
@@ -30,8 +30,9 @@ export class MemgraphManager {
   private operationQueue: QueuedOperation[] = [];
   private isProcessing = false;
 
-  constructor(tenantId: string, driver: Driver, symbolTable?: SymbolTable) {
-    this.tenantId = tenantId;
+  constructor(sessionId: string, driver: Driver, symbolTable?: SymbolTable) {
+    this.sessionId = sessionId;
+    this.tenantId = sessionId; // Use sessionId as tenantId for now
     this.driver = driver;
     this.symbolTable = symbolTable;
   }
@@ -40,18 +41,16 @@ export class MemgraphManager {
     return hashes.map((hash) => Buffer.from(hash).toString("base64")).join("|");
   }
 
-  private createStorageMappings(hashes: HashedValue[]): {
+  private createStorageMappings(token: OutputToken): {
     keys: string;
     valueMappings: Array<{ key: string; value: string }>;
   } {
-    if (!this.symbolTable) return { keys: "unavailable", valueMappings: [] };
-
-    try {
-      const originalValues = this.symbolTable.getDataArray(hashes);
+    // If token already has originalData, use it
+    if (token.originalData && Array.isArray(token.originalData)) {
       const lookupEntries: Array<{ key: string; value: string }> = [];
 
-      const lookupKeys = originalValues.map((value, index) => {
-        const key = this.createValueLookupKey(index, hashes);
+      const lookupKeys = token.originalData.map((value, index) => {
+        const key = this.createValueLookupKey(index, token.hashes);
         const stringValue = this.safeStringifyValue(value);
         lookupEntries.push({ key, value: stringValue });
         return key;
@@ -61,7 +60,49 @@ export class MemgraphManager {
         keys: lookupKeys.join("|"),
         valueMappings: lookupEntries,
       };
+    }
+
+    // Fallback to symbol table lookup (legacy) - with safe handling
+    if (!this.symbolTable) return { keys: "unavailable", valueMappings: [] };
+
+    try {
+      const originalValues: any[] = [];
+      const lookupEntries: Array<{ key: string; value: string }> = [];
+      const validKeys: string[] = [];
+
+      // Safely retrieve each hash individually
+      for (let index = 0; index < token.hashes.length; index++) {
+        const hash = token.hashes[index];
+        try {
+          const value = this.symbolTable.getData(hash);
+          const key = this.createValueLookupKey(index, token.hashes);
+          const stringValue = this.safeStringifyValue(value);
+
+          originalValues.push(value);
+          lookupEntries.push({ key, value: stringValue });
+          validKeys.push(key);
+        } catch (err) {
+          const hashKey = Buffer.from(hash).toString("base64");
+          console.warn(`Skipping hash not found in symbol table: ${hashKey}`);
+          // Skip this hash but continue processing others
+        }
+      }
+
+      return {
+        keys: validKeys.join("|"),
+        valueMappings: lookupEntries,
+      };
     } catch (err) {
+      console.error("Error in createStorageMappings:", err);
+      console.error(
+        "Hashes that failed lookup:",
+        token.hashes.map((h) => Buffer.from(h).toString("base64"))
+      );
+      console.error("Symbol table size:", this.symbolTable?.size());
+      console.error(
+        "Symbol table cache stats:",
+        this.symbolTable?.getCacheStats()
+      );
       return { keys: "error", valueMappings: [] };
     }
   }
@@ -89,25 +130,31 @@ export class MemgraphManager {
   }
 
   /**
-   * Process a token by adding it to the sequential queue
+   * Process a token by adding it to the sequential queue.
+   * Returns a promise that resolves when the operation is complete.
    */
-  async process(
-    token: OutputToken,
-    callback: (error: Error | null, token: OutputToken | null) => void
-  ): Promise<void> {
-    if (!token.hashes || token.hashes.length === 0) {
-      console.warn(`Skipping token with empty hashes`);
-      callback(null, token);
-      return;
-    }
+  async process(token: OutputToken): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!token.hashes || token.hashes.length === 0) {
+        console.warn(`Skipping token with empty hashes`);
+        return resolve();
+      }
 
-    // Add to queue
-    this.operationQueue.push({ token, callback });
+      // The callback for the operation queue will resolve/reject the outer promise
+      const callback = (error: Error | null) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
 
-    // Start processing if not already running
-    if (!this.isProcessing) {
-      this.processQueue();
-    }
+      this.operationQueue.push({ token, callback });
+
+      if (!this.isProcessing) {
+        this.processQueue();
+      }
+    });
   }
 
   /**
@@ -123,10 +170,10 @@ export class MemgraphManager {
 
       try {
         await this.processTokenSequentially(operation.token);
-        operation.callback(null, operation.token);
+        operation.callback(null); // Signal success
       } catch (error) {
         console.error("Error processing token sequentially:", error);
-        operation.callback(error as Error, null);
+        operation.callback(error as Error); // Signal error
       }
     }
 
@@ -142,7 +189,7 @@ export class MemgraphManager {
 
     try {
       const tokenValue = this.encodeHashesForStorage(token.hashes);
-      const tokenData = this.createStorageMappings(token.hashes);
+      const tokenData = this.createStorageMappings(token);
 
       if (tokenData.valueMappings.length > 0) {
         await this.storeDictionaryEntries(tx, tokenData.valueMappings);
@@ -182,8 +229,10 @@ export class MemgraphManager {
     await tx.run(
       `
       UNWIND $valueMappings as entry
-      MERGE (dict:ValueDictionary:$tid {key: entry.key})
+      MERGE (dict:Dictionary:$tid {key: entry.key})
       ON CREATE SET dict.value = entry.value
+      ON CREATE SET dict.timestamp_created = timestamp()
+      ON MATCH SET dict.timestamp_last_seen = timestamp()
       `,
       {
         valueMappings: validMappings,
@@ -202,22 +251,24 @@ export class MemgraphManager {
       // Create token and link to previous token
       await tx.run(
         `
-        // Get or create the previous token
         MATCH (prevTkn:Tkn:$tid {value: $prevTokenValue})
         
-        // Create the current token
         MERGE (currTkn:Tkn:$tid {value: $tokenValue})
-        ON CREATE SET currTkn.lookupKeys = $lookupKeys
+        ON CREATE SET currTkn.session_discovered = $sid
+        ON CREATE SET currTkn.session_last_seen = $sid
+        ON CREATE SET currTkn.timestamp_created = timestamp()
+        ON MATCH SET currTkn.session_last_seen = $sid
+        ON MATCH SET currTkn.timestamp_last_seen = timestamp()
         
-        // Create relationship from previous to current
-        MERGE (prevTkn)-[:D1 {idx: $tokenIdx, session: $sid}]->(currTkn)
+        MERGE (prevTkn)-[:D1 {session_index: $tokenIdx, session_id: $sid, timestamp_created: timestamp()}]->(currTkn)
         
-        // Link token to its value dictionaries
         WITH currTkn
         WITH currTkn, split($lookupKeys, '|') as keys
-        UNWIND keys as key
-        MATCH (dict:ValueDictionary:$tid {key: key})
-        MERGE (currTkn)-[:HAS_VALUE]->(dict)
+        UNWIND range(0, size(keys) - 1) as i
+        WITH currTkn, keys[i] as key, i
+        MATCH (dict:Dictionary:$tid {key: key})
+        MERGE (currTkn)-[r:HAS_VALUE]->(dict)
+        ON CREATE SET r.order = i
         `,
         {
           prevTokenValue: this.lastTokenValue,
@@ -229,22 +280,28 @@ export class MemgraphManager {
         }
       );
     } else {
-      // First token - just create it
+      // First token - just create it and tag it with the session ID
       await tx.run(
         `
         MERGE (tkn:Tkn:$tid {value: $tokenValue})
-        ON CREATE SET tkn.lookupKeys = $lookupKeys
+        ON CREATE SET tkn.session_discovered = $sid
+        ON CREATE SET tkn.session_last_seen = $sid
+        ON CREATE SET tkn.timestamp_created = timestamp()
+        ON MATCH SET tkn.session_last_seen = $sid
+        ON MATCH SET tkn.timestamp_last_seen = timestamp()
         
-        // Link token to its value dictionaries
         WITH tkn
         WITH tkn, split($lookupKeys, '|') as keys
-        UNWIND keys as key
-        MATCH (dict:ValueDictionary:$tid {key: key})
-        MERGE (tkn)-[:HAS_VALUE]->(dict)
+        UNWIND range(0, size(keys) - 1) as i
+        WITH tkn, keys[i] as key, i
+        MATCH (dict:Dictionary:$tid {key: key})
+        MERGE (tkn)-[r:HAS_VALUE]->(dict)
+        ON CREATE SET r.order = i
         `,
         {
           tokenValue,
           lookupKeys,
+          sid: this.sessionId,
           tid: this.tenantId,
         }
       );

@@ -1,61 +1,73 @@
 import type { Socket } from "bun";
 import { parseToBatch, type BatchItem } from "./parse-to-batch";
 import type { SocketData } from ".";
+import { type OutputToken, type TknMinerCallback } from "./miner";
+import type { HashedValue } from "./cyrb53";
 
 export const PROTOCOL_HEADER_SIZE = 5;
 
-/**
- * Process incoming data as a batch of items
- * Expects data to be Array<{ data: string | Uint8Array }>
- */
 export function processBatch(socket: Socket<SocketData>, rawData: any): void {
   try {
-    for (const item of parseToBatch(rawData)) {
-      processItem(socket, item);
+    const items = parseToBatch(rawData);
+    for (const item of items) {
+      socket.data.processingQueue.push(item);
+      socket.data.monitor.incrementItemsIngested();
+    }
+    if (!socket.data.isProcessing) {
+      processQueue(socket);
     }
   } catch (err) {
     console.error("Error processing batch:", err);
   }
 }
 
+async function processQueue(socket: Socket<SocketData>): Promise<void> {
+  socket.data.isProcessing = true;
+
+  while (socket.data.processingQueue.length > 0) {
+    const item = socket.data.processingQueue.shift();
+    if (item) {
+      await processItem(socket, item);
+    }
+  }
+
+  socket.data.isProcessing = false;
+}
+
 async function processItem(
   socket: Socket<SocketData>,
   item: BatchItem
 ): Promise<void> {
+  const { monitor, symbolTable, tknMiner, memgraphManager } = socket.data;
+
+  // Hash the current item and ensure it's stored in the symbol table
+  const hashedValue = symbolTable.getHash(item.data);
+  monitor.countBytes(item);
+
   try {
-    const { monitor } = socket.data;
-
-    // Hash the item (this is fast, no need to monitor)
-    const hashedValue = socket.data.symbolTable.getHash(item.data);
-
-    // Start monitoring transform operation
-    const transformStart = monitor.startTransform();
-
-    socket.data.tknMiner.transform([hashedValue], async (err, token) => {
-      // End transform monitoring
-      const hadOutput = token !== null;
-      monitor.endTransform(transformStart, hadOutput);
-
-      if (err) {
-        console.error("Error in token miner:", err);
-      } else if (token === null) {
-        // Token was merged, no further processing needed
-        console.log("Chunk is being merged.");
-      } else {
-        // Token was emitted, process with memgraph
-        const memgraphStart = monitor.startMemgraph();
-
-        await socket.data.memgraphManager.process(token, async (error) => {
-          // End memgraph monitoring
-          monitor.endMemgraph(memgraphStart);
-
-          if (error) {
-            console.error("Error in memgraph manager:", error);
-          }
-        });
-      }
+    const token = await new Promise<OutputToken | null>((resolve, reject) => {
+      const callback: TknMinerCallback = async (err, tokenResult) => {
+        if (err) return reject(err);
+        resolve(tokenResult);
+      };
+      tknMiner.transform([hashedValue], callback);
     });
-  } catch (error) {
-    console.error("Error processing item:", error);
+
+    if (token !== null) {
+      // All hashes should be valid since we wait for processing to complete before cleanup
+      const originalData = token.hashes.map((hash: HashedValue) => {
+        return symbolTable.getData(hash);
+      });
+
+      const outputToken = {
+        ...token,
+        originalData,
+      };
+
+      await memgraphManager.process(outputToken);
+      monitor.incrementTokensEmitted();
+    }
+  } catch (err) {
+    console.error("Error during item processing:", err);
   }
 }

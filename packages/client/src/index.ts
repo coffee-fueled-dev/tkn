@@ -7,6 +7,8 @@ export interface BatchItem {
 export interface TknClientOptions {
   host?: string;
   port?: number;
+  httpUrl?: string; // Full HTTP URL for replay
+  socketUrl?: string; // Socket connection string (host:port)
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
@@ -16,16 +18,33 @@ export class TknClient {
   private socket: TCPSocket | null = null;
   private options: Required<TknClientOptions>;
   private connected = false;
+  private onConnect: () => void;
+  private onDisconnect: () => void;
+  private onError: (error: Error) => void;
 
   constructor(options: TknClientOptions = {}) {
+    // Parse socket URL from environment or construct from host/port
+    const defaultSocketUrl = process.env.TKN_SOCKET_URL || "localhost:4001";
+    const defaultHttpUrl = process.env.TKN_HTTP_URL || "http://localhost:4000";
+
+    // If socketUrl is provided, parse host and port from it
+    const socketUrl = options.socketUrl || defaultSocketUrl;
+    const [socketHost, socketPortStr] = socketUrl.split(":");
+    const socketPort = parseInt(socketPortStr, 10);
+
     this.options = {
-      host: options.host || "localhost",
-      port: options.port || 3001, // Default socket port (TKN_PORT + 1)
+      host: options.host || socketHost,
+      port: options.port || socketPort,
+      httpUrl: options.httpUrl || defaultHttpUrl,
+      socketUrl: socketUrl,
       onConnect: options.onConnect || (() => {}),
       onDisconnect: options.onDisconnect || (() => {}),
       onError:
         options.onError || ((err) => console.error("TKN Client Error:", err)),
     };
+    this.onConnect = this.options.onConnect;
+    this.onDisconnect = this.options.onDisconnect;
+    this.onError = this.options.onError || (() => {});
   }
 
   /**
@@ -45,18 +64,18 @@ export class TknClient {
             open: (socket) => {
               this.socket = socket;
               this.connected = true;
-              this.options.onConnect();
+              this.onConnect();
               resolve();
             },
             close: (socket) => {
               this.connected = false;
               this.socket = null;
-              this.options.onDisconnect();
+              this.onDisconnect();
             },
             error: (socket, error) => {
               this.connected = false;
               this.socket = null;
-              this.options.onError(error);
+              this.onError(error);
               reject(error);
             },
             data: (socket, data) => {
@@ -68,7 +87,7 @@ export class TknClient {
 
         // Handle connection promise rejection
         socketPromise.catch((error) => {
-          this.options.onError(error);
+          this.onError(error);
           reject(error);
         });
       } catch (error) {
@@ -92,7 +111,7 @@ export class TknClient {
 
       this.socket.write(dataBuffer);
     } catch (error) {
-      this.options.onError(error as Error);
+      this.onError(error as Error);
       throw error;
     }
   }
@@ -141,6 +160,27 @@ export class TknClient {
       port: this.options.port,
       connected: this.connected,
     };
+  }
+
+  async replay(sessionId: string): Promise<string[]> {
+    const url = `${this.options.httpUrl}/replay/${sessionId}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorBody = await response
+          .json()
+          .catch(() => ({ error: "Unknown error during replay" }));
+        throw new Error(
+          `Replay failed with status ${response.status}: ${errorBody.error}`
+        );
+      }
+      const data = await response.json();
+      return data as string[];
+    } catch (error) {
+      this.onError(error as Error);
+      throw error;
+    }
   }
 }
 

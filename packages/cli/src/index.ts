@@ -6,40 +6,46 @@ import { readFile } from "fs/promises";
 import { TknClient, type BatchItem } from "tkn-client";
 
 interface CliOptions {
-  glob: string;
+  command: "send" | "replay" | "help";
+  globOrSessionId: string;
   batchSize: number;
   interval: number;
-  host: string;
-  port: number;
+  httpUrl: string;
+  socketUrl: string;
   verbose: boolean;
   dryRun: boolean;
-  help: boolean;
 }
 
 function showHelp() {
   console.log(`
-TKN CLI - Send file content to TKN server in batches
+TKN CLI - Send file content to TKN server or replay a session
 
 Usage:
-  tkn-send <glob> [options]
+  tkn <command> [args] [options]
 
-Arguments:
-  glob                  File glob pattern (e.g., "*.txt", "data/**/*.json")
+Commands:
+  send <glob>           Send file(s) matching the glob pattern.
+  replay <session-id>   Replay and print the content of a completed session.
+  help                  Show this help message.
 
-Options:
+Global Options:
+  --http-url <url>      HTTP server URL for replay (default: from TKN_HTTP_URL env or http://localhost:4000)
+  --socket-url <url>    Socket server URL for sending data (default: from TKN_SOCKET_URL env or localhost:4001)
+  --verbose             Show detailed output
+
+Options for 'send' command only:
   --batch-size <size>   Number of items per batch (default: 100)
   --interval <ms>       Interval between batches in milliseconds (default: 1000)
-  --host <host>         Server host (default: localhost)
-  --port <port>         Server port (default: 3001)
-  --verbose             Show detailed output
   --dry-run             Show what would be sent without actually sending
-  --help                Show this help message
+
+Environment Variables:
+  TKN_HTTP_URL          HTTP server URL for replay
+  TKN_SOCKET_URL        Socket server host:port for sending data
 
 Examples:
-  tkn-send "*.txt"                           # Send all .txt files
-  tkn-send "data/**/*.json" --batch-size 50  # Send JSON files in batches of 50
-  tkn-send "logs/*.log" --interval 500       # Send with 500ms interval
-  tkn-send "*.txt" --dry-run --verbose       # Preview what would be sent
+  tkn send "*.txt"                           # Send all .txt files
+  tkn send "data/**/*.json" --batch-size 50  # Send JSON files in batches of 50
+  tkn replay "some-session-id-12345"         # Replay a session
 `);
 }
 
@@ -49,8 +55,8 @@ function parseCliArgs(): CliOptions {
     options: {
       "batch-size": { type: "string", default: "100" },
       interval: { type: "string", default: "1000" },
-      host: { type: "string", default: "localhost" },
-      port: { type: "string", default: "3001" },
+      "http-url": { type: "string", default: "" },
+      "socket-url": { type: "string", default: "" },
       verbose: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -58,28 +64,39 @@ function parseCliArgs(): CliOptions {
     allowPositionals: true,
   });
 
-  if (values.help || positionals.length === 0) {
+  const command = (positionals[0] || "help") as CliOptions["command"];
+
+  if (
+    values.help ||
+    command === "help" ||
+    (command !== "replay" && positionals.length < 2)
+  ) {
     return {
-      glob: "",
+      command: "help",
+      globOrSessionId: "",
       batchSize: 100,
       interval: 1000,
-      host: "localhost",
-      port: 3001,
+      httpUrl: process.env.TKN_HTTP_URL || "http://localhost:4000",
+      socketUrl: process.env.TKN_SOCKET_URL || "localhost:4001",
       verbose: false,
       dryRun: false,
-      help: true,
     };
   }
 
+  const httpUrl =
+    values["http-url"] || process.env.TKN_HTTP_URL || "http://localhost:4000";
+  const socketUrl =
+    values["socket-url"] || process.env.TKN_SOCKET_URL || "localhost:4001";
+
   return {
-    glob: positionals[0],
+    command,
+    globOrSessionId: positionals[1] || "",
     batchSize: parseInt(values["batch-size"] as string),
     interval: parseInt(values.interval as string),
-    host: values.host as string,
-    port: parseInt(values.port as string),
+    httpUrl,
+    socketUrl,
     verbose: values.verbose as boolean,
     dryRun: values["dry-run"] as boolean,
-    help: false,
   };
 }
 
@@ -94,13 +111,11 @@ async function readFileContent(
       console.log(`📄 Read ${filePath} (${content.length} characters)`);
     }
 
-    // Split content by lines and create batch items
-    const lines = content
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+    // Convert each character to a batch item for TKN algorithm
+    // The TKN algorithm expects individual discrete data items (characters)
+    const characters = Array.from(content);
 
-    return lines.map((line) => ({ data: line }));
+    return characters.map((char) => ({ data: char }));
   } catch (error) {
     console.error(`❌ Error reading ${filePath}:`, error);
     return [];
@@ -168,28 +183,25 @@ async function sendBatches(
   }
 }
 
-async function main() {
-  const options = parseCliArgs();
-
-  if (options.help) {
-    showHelp();
-    process.exit(0);
-  }
-
-  console.log("🚀 TKN CLI starting...");
+async function handleSendCommand(options: CliOptions) {
+  console.log("🚀 TKN CLI starting in 'send' mode...");
 
   if (options.verbose) {
     console.log(`📋 Configuration:
-  Glob: ${options.glob}
+  Glob: ${options.globOrSessionId}
   Batch size: ${options.batchSize}
   Interval: ${options.interval}ms
-  Server: ${options.host}:${options.port}
+  Socket Server: ${options.socketUrl}
+  HTTP Server: ${options.httpUrl}
+  Environment Variables:
+    TKN_SOCKET_URL: ${process.env.TKN_SOCKET_URL || "(not set)"}
+    TKN_HTTP_URL: ${process.env.TKN_HTTP_URL || "(not set)"}
   Dry run: ${options.dryRun}`);
   }
 
   // Find files matching the glob pattern
-  console.log(`🔍 Finding files matching: ${options.glob}`);
-  const files = await fg(options.glob, { onlyFiles: true });
+  console.log(`🔍 Finding files matching: ${options.globOrSessionId}`);
+  const files = await fg(options.globOrSessionId, { onlyFiles: true });
 
   if (files.length === 0) {
     console.log("❌ No files found matching the pattern");
@@ -220,7 +232,7 @@ async function main() {
   // Create batches
   const batches = createBatches(allItems, options.batchSize);
   console.log(
-    `📦 Created ${batches.length} batch(es) of max ${options.batchSize} items each`
+    ` Created ${batches.length} batch(es) of max ${options.batchSize} items each`
   );
 
   if (options.dryRun) {
@@ -238,11 +250,11 @@ async function main() {
 
   // Connect to server and send batches
   const client = new TknClient({
-    host: options.host,
-    port: options.port,
+    socketUrl: options.socketUrl,
+    httpUrl: options.httpUrl,
     onConnect: () => {
       if (options.verbose) {
-        console.log(`🔗 Connected to ${options.host}:${options.port}`);
+        console.log(`🔗 Connected to ${options.socketUrl}`);
       }
     },
     onDisconnect: () => {
@@ -256,7 +268,7 @@ async function main() {
   });
 
   try {
-    console.log(`🔗 Connecting to ${options.host}:${options.port}...`);
+    console.log(`🔗 Connecting to ${options.socketUrl}...`);
     await client.connect();
 
     console.log("📤 Sending batches...");
@@ -274,6 +286,72 @@ async function main() {
     process.exit(1);
   } finally {
     await client.disconnect();
+  }
+}
+
+async function handleReplayCommand(options: CliOptions) {
+  console.log("🚀 TKN CLI starting in 'replay' mode...");
+  const { globOrSessionId: sessionId, httpUrl, socketUrl, verbose } = options;
+
+  if (!sessionId) {
+    console.error("❌ Session ID is required for replay.");
+    showHelp();
+    process.exit(1);
+  }
+
+  if (verbose) {
+    console.log(`📋 Configuration:
+  Session ID: ${sessionId}
+  HTTP Server: ${httpUrl}
+  Environment Variables:
+    TKN_HTTP_URL: ${process.env.TKN_HTTP_URL || "(not set)"}
+    TKN_SOCKET_URL: ${process.env.TKN_SOCKET_URL || "(not set)"}`);
+  }
+
+  const client = new TknClient({
+    socketUrl: socketUrl,
+    httpUrl: httpUrl,
+    onError: (error) => {
+      console.error("❌ Client error:", error.message);
+    },
+  });
+
+  try {
+    console.log(`🔍 Replaying session: ${sessionId}`);
+    const reconstructedData = await client.replay(sessionId);
+
+    // Create a colorful delimiter for token separation
+    const colorfulDelimiter = "\x1b[36m|\x1b[0m"; // Cyan pipe character
+    const fullText = reconstructedData.join(colorfulDelimiter);
+
+    console.log("\n--- Reconstructed Session Content ---");
+    console.log(fullText);
+    console.log("-------------------------------------\n");
+    console.log(
+      `✅ Replay completed. Total characters: ${
+        reconstructedData.join("").length
+      }`
+    );
+  } catch (error) {
+    // Client's onError will already log the message
+    process.exit(1);
+  }
+}
+
+async function main() {
+  const options = parseCliArgs();
+
+  switch (options.command) {
+    case "send":
+      await handleSendCommand(options);
+      break;
+    case "replay":
+      await handleReplayCommand(options);
+      break;
+    case "help":
+    default:
+      showHelp();
+      process.exit(0);
   }
 }
 

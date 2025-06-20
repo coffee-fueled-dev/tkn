@@ -4,6 +4,7 @@ import { type HashedValue, cyrb53 } from "./cyrb53";
 export interface OutputToken {
   hashes: HashedValue[];
   idx: number;
+  originalData?: any[];
 }
 
 export type TknMinerCallback = (

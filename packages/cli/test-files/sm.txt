@@ -1,5 +1,1 @@
 This is a small test file for the TKN file streamer example.
-It contains just a few lines of text to demonstrate how the file streaming works.
-The TKN client will read this file in small chunks and send them to the server.
-Each chunk will be sent as either a string or binary data, depending on configuration.
-This allows for testing the different data types supported by the TKN protocol. 

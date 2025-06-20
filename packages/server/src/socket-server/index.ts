@@ -7,7 +7,8 @@ import { randomUUIDv7 } from "bun";
 import { createMessageBuffer } from "./message-buffer";
 import { PROTOCOL_HEADER_SIZE } from "./process-batch";
 import { memgraphDriver, MemgraphManager } from "./memgraph";
-import { ProcessMonitor, monitorRegistry } from "./monitor";
+import { ProcessMonitor } from "./monitor";
+import type { BatchItem } from "./parse-to-batch";
 
 export type SocketData = {
   sessionId: string;
@@ -16,6 +17,8 @@ export type SocketData = {
   symbolTable: SymbolTable;
   messageBuffer: MessageBuffer;
   monitor: ProcessMonitor;
+  processingQueue: BatchItem[];
+  isProcessing: boolean;
 };
 
 export const startSocketServer = () =>
@@ -38,9 +41,6 @@ export const startSocketServer = () =>
         const messageBuffer = createMessageBuffer(8192, PROTOCOL_HEADER_SIZE);
         const monitor = new ProcessMonitor();
 
-        // Register monitor for aggregated metrics
-        monitorRegistry.register(sessionId, monitor);
-
         socket.data = {
           sessionId,
           tknMiner,
@@ -48,67 +48,39 @@ export const startSocketServer = () =>
           symbolTable,
           messageBuffer,
           monitor,
+          processingQueue: [],
+          isProcessing: false,
         };
 
-        console.info(`🔗 Session ${sessionId.slice(0, 8)} connected`);
+        console.info(`🔗 Session ${sessionId} connected`);
       },
       async close(socket) {
         const { sessionId, monitor } = socket.data;
 
-        // Capture session metrics before cleanup
-        const sessionMetrics = monitor.getMetrics();
-        if (sessionMetrics.transform.count > 0) {
-          console.info(`📋 Session ${sessionId.slice(0, 8)} completed:`, {
-            transforms: sessionMetrics.transform.count,
-            memgraphOps: sessionMetrics.memgraph.count,
-            avgTransformDuration:
-              Math.round(sessionMetrics.transform.meanDuration * 100) / 100,
-            avgMemgraphDuration:
-              Math.round(sessionMetrics.memgraph.meanDuration * 100) / 100,
-            mergeRate: Math.round(sessionMetrics.mergeRate.ratio * 10000) / 100, // as percentage
-            inputItems: sessionMetrics.mergeRate.inputCount,
-            tokensEmitted: sessionMetrics.mergeRate.mergeCount,
-          });
+        console.info(`🔌 Session ${sessionId} disconnected`);
+
+        // Wait for any remaining processing to complete before cleanup
+        while (
+          socket.data.isProcessing ||
+          socket.data.processingQueue.length > 0
+        ) {
+          console.log(
+            `Waiting for session ${sessionId} to finish processing queue (${socket.data.processingQueue.length} items remaining)...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
         }
 
-        // Unregister monitor before cleanup
-        monitorRegistry.unregister(sessionId);
+        // Log session completion with formatted message
+        console.info(
+          `📋 Session ${sessionId} completed: ${monitor.getConsoleMessage()}`
+        );
 
         socket.data.symbolTable.clear();
         socket.data.messageBuffer.clear();
         socket.data.monitor.reset();
-
-        console.info(`🔌 Session ${sessionId.slice(0, 8)} disconnected`);
       },
       error(err) {
         console.error("❌ Socket error:", err);
       },
     },
   });
-
-// Log metrics every 10 seconds
-setInterval(() => {
-  const aggregatedMetrics = monitorRegistry.getAggregatedMetrics();
-
-  if (aggregatedMetrics.activeConnections > 0) {
-    console.log(
-      `📊 Overall metrics (${aggregatedMetrics.activeConnections} active connections):`
-    );
-    console.log(
-      `  Transform avg: ${aggregatedMetrics.avgTransformDuration.toFixed(2)}ms`
-    );
-    console.log(
-      `  Memgraph avg: ${aggregatedMetrics.avgMemgraphDuration.toFixed(2)}ms`
-    );
-    console.log(
-      `  Merge rate: ${(aggregatedMetrics.overallMergeRate * 100).toFixed(2)}%`
-    );
-
-    // Check for bottlenecks across all connections
-    if (aggregatedMetrics.bottlenecks.length > 0) {
-      console.log(
-        `⚠️  Bottlenecks detected: ${aggregatedMetrics.bottlenecks.join(", ")}`
-      );
-    }
-  }
-}, 10000);

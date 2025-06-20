@@ -19,6 +19,7 @@
     "tkn-send:lg": "bun --filter=tkn-cli run cli:lg",
     "tkn-send:xl": "bun --filter=tkn-cli run cli:xl",
     "tkn-send:all": "bun --filter=tkn-cli run cli:all",
+    "tkn-replay": "bun --filter=tkn-cli run cli:replay",
     "install:all": "bun install",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
     "docker:up": "docker-compose up -d",
