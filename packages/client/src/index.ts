@@ -18,9 +18,12 @@ export class TknClient {
   private socket: TCPSocket | null = null;
   private options: Required<TknClientOptions>;
   private connected = false;
+  private ready = false; // New: tracks if server is ready
   private onConnect: () => void;
   private onDisconnect: () => void;
   private onError: (error: Error) => void;
+  private readyPromise: Promise<void> | null = null;
+  private readyResolve: (() => void) | null = null;
 
   constructor(options: TknClientOptions = {}) {
     // Parse socket URL from environment or construct from host/port
@@ -48,7 +51,7 @@ export class TknClient {
   }
 
   /**
-   * Connect to the TKN server
+   * Connect to the TKN server and wait for ready signal
    */
   async connect(): Promise<void> {
     if (this.connected) {
@@ -57,6 +60,11 @@ export class TknClient {
 
     return new Promise((resolve, reject) => {
       try {
+        // Set up ready promise
+        this.readyPromise = new Promise((readyResolve) => {
+          this.readyResolve = readyResolve;
+        });
+
         const socketPromise = Bun.connect({
           hostname: this.options.host,
           port: this.options.port,
@@ -65,22 +73,31 @@ export class TknClient {
               this.socket = socket;
               this.connected = true;
               this.onConnect();
-              resolve();
+
+              // Wait for ready signal before resolving connect
+              this.readyPromise!.then(() => {
+                resolve();
+              });
             },
             close: (socket) => {
               this.connected = false;
+              this.ready = false;
               this.socket = null;
+              this.readyPromise = null;
+              this.readyResolve = null;
               this.onDisconnect();
             },
             error: (socket, error) => {
               this.connected = false;
+              this.ready = false;
               this.socket = null;
+              this.readyPromise = null;
+              this.readyResolve = null;
               this.onError(error);
               reject(error);
             },
             data: (socket, data) => {
-              // Server doesn't send data back in our simple protocol
-              // But we can handle it if needed in the future
+              this.handleServerMessage(data);
             },
           },
         });
@@ -97,11 +114,56 @@ export class TknClient {
   }
 
   /**
+   * Handle messages from the server
+   */
+  private handleServerMessage(data: Buffer): void {
+    try {
+      const message = new TextDecoder().decode(data).trim();
+
+      if (message === "READY") {
+        this.ready = true;
+        if (this.readyResolve) {
+          this.readyResolve();
+          this.readyResolve = null;
+        }
+      }
+      // Handle other server messages here if needed in the future
+    } catch (error) {
+      this.onError(new Error(`Failed to parse server message: ${error}`));
+    }
+  }
+
+  /**
+   * Wait for server to be ready (can be called multiple times safely)
+   */
+  async waitForReady(): Promise<void> {
+    if (!this.connected) {
+      throw new Error("Client is not connected");
+    }
+
+    if (this.ready) {
+      return; // Already ready
+    }
+
+    if (this.readyPromise) {
+      return this.readyPromise;
+    }
+
+    throw new Error("No ready promise available");
+  }
+
+  /**
    * Send a batch of items to the server
    */
   async sendBatch(items: BatchItem[]): Promise<void> {
     if (!this.connected || !this.socket) {
       throw new Error("Client is not connected");
+    }
+
+    if (!this.ready) {
+      throw new Error(
+        "Server is not ready. Call waitForReady() first or ensure connect() has completed."
+      );
     }
 
     try {
@@ -141,7 +203,10 @@ export class TknClient {
 
     this.socket.end();
     this.connected = false;
+    this.ready = false;
     this.socket = null;
+    this.readyPromise = null;
+    this.readyResolve = null;
   }
 
   /**
@@ -152,13 +217,26 @@ export class TknClient {
   }
 
   /**
+   * Check if server is ready
+   */
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  /**
    * Get connection info
    */
-  getConnectionInfo(): { host: string; port: number; connected: boolean } {
+  getConnectionInfo(): {
+    host: string;
+    port: number;
+    connected: boolean;
+    ready: boolean;
+  } {
     return {
       host: this.options.host,
       port: this.options.port,
       connected: this.connected,
+      ready: this.ready,
     };
   }
 

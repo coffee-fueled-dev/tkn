@@ -2,36 +2,15 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
-
 scrape_configs:
-  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
-  - job_name: "prometheus"
+  - job_name: "tkn-metrics"
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["tkn-metrics-server:5000"]
+    scrape_interval: 10s
+    metrics_path: /metrics
 
-  # TKN Server metrics
-  - job_name: "tkn-server"
+  - job_name: "tkn-server-health"
     static_configs:
       - targets: ["tkn-server:4000"]
-    metrics_path: "/metrics"
-    scrape_interval: 10s
-    scrape_timeout: 5s
-    params:
-      format: ["prometheus"]
-
-  # Optional: Memgraph metrics (if supported)
-  - job_name: "memgraph"
-    static_configs:
-      - targets: ["memgraph:7444"]
-    metrics_path: "/metrics"
     scrape_interval: 30s
-    scrape_timeout: 10s
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-          # - alertmanager:9093
+    metrics_path: /health

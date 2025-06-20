@@ -271,6 +271,12 @@ async function handleSendCommand(options: CliOptions) {
     console.log(`🔗 Connecting to ${options.socketUrl}...`);
     await client.connect();
 
+    console.log("⏳ Waiting for server to be ready...");
+    // connect() now waits for READY, but we can add explicit feedback
+    if (options.verbose) {
+      console.log("✅ Server is ready, symbol table preloaded");
+    }
+
     console.log("📤 Sending batches...");
     await sendBatches(
       client,

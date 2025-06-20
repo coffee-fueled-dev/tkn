@@ -7,12 +7,15 @@
     "packages/*"
   ],
   "scripts": {
+    "context": "bash scripts/collect-context.sh",
     "build": "bun --filter='*' run build",
     "dev:server": "bun --filter=tkn-server run dev",
     "dev:client": "bun --filter=tkn-client run dev",
     "dev:cli": "bun --filter=tkn-cli run dev",
+    "dev:metrics": "bun --filter=tkn-metrics-server run dev",
     "test:server": "bun --filter=tkn-server run start",
     "test:client": "bun --filter=tkn-client run example:demo",
+    "test:metrics": "bun --filter=tkn-metrics-server run start",
     "tkn-send:help": "bun --filter=tkn-cli run help",
     "tkn-send:sm": "bun --filter=tkn-cli run cli:sm",
     "tkn-send:md": "bun --filter=tkn-cli run cli:md",
@@ -25,8 +28,7 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
-    "example:batch": "cd packages/client && bun examples/tkn-batch-example.ts",
-    "example:browser": "cd packages/client && open examples/browser-example.html"
+    "docker:logs:metrics": "docker-compose logs -f tkn-metrics-server"
   },
   "devDependencies": {
     "@types/bun": "latest",

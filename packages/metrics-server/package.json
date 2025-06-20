@@ -1,0 +1,31 @@
+{
+  "name": "tkn-metrics-server",
+  "version": "1.0.0",
+  "description": "Performance monitoring and metrics collection server for TKN",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "prom-client": "^15.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "metrics",
+    "monitoring",
+    "performance",
+    "tkn",
+    "prometheus"
+  ],
+  "author": "TKN Team",
+  "license": "MIT"
+}

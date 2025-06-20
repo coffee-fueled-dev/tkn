@@ -12,10 +12,21 @@ const MINER_BATCH_SIZE = 50;
 export function processBatch(socket: Socket<SocketData>, rawData: any): void {
   try {
     const items = parseToBatch(rawData);
+
+    // Calculate total bytes for this batch
+    let totalBytes = 0;
     for (const item of items) {
       socket.data.processingQueue.push(item);
-      socket.data.monitor.incrementItemsIngested();
+      totalBytes += item.data.length;
     }
+
+    // Send ingestion event to metrics server using session-specific client
+    socket.data.metricsClient.dataIngested(
+      socket.data.sessionId,
+      items.length,
+      totalBytes
+    );
+
     if (!socket.data.isProcessing) {
       processQueue(socket);
     }
@@ -54,21 +65,21 @@ async function processMinerBatch(
   socket: Socket<SocketData>,
   items: BatchItem[]
 ): Promise<void> {
-  const { monitor, symbolTable, tknMiner, memgraphManager } = socket.data;
+  const { symbolTable, tknMiner, memgraphManager, sessionId, metricsClient } =
+    socket.data;
 
   // Hash all items and store in symbol table
   const hashedValues: HashedValue[] = [];
   for (const item of items) {
     const hashedValue = symbolTable.getHash(item.data);
     hashedValues.push(hashedValue);
-    monitor.countBytes(item);
   }
 
   try {
     // Process the entire batch through the miner at once
     const tokens: OutputToken[] = [];
+    const batchStartTime = performance.now();
 
-    monitor.startTransformTiming();
     await new Promise<void>((resolve, reject) => {
       let tokenCount = 0;
       let completed = false;
@@ -76,13 +87,8 @@ async function processMinerBatch(
       const callback: TknMinerCallback = async (err, tokenResult) => {
         if (err) return reject(err);
 
-        // Track transform - miner actually processed an item
-        monitor.incrementTransforms();
-
         if (tokenResult !== null) {
           tokens.push(tokenResult);
-          // Track token emission when miner actually produces a token
-          monitor.incrementTokensEmitted();
         }
 
         tokenCount++;
@@ -96,7 +102,20 @@ async function processMinerBatch(
 
       tknMiner.transform(hashedValues, callback);
     });
-    monitor.endTransformTiming();
+
+    const batchEndTime = performance.now();
+    const batchDuration = batchEndTime - batchStartTime;
+
+    // Send batch processed event to metrics server
+    metricsClient.batchProcessed(
+      sessionId,
+      items.length,
+      batchDuration,
+      socket.data.processingQueue.length
+    );
+
+    // Send transform completed event to metrics server
+    metricsClient.transformCompleted(sessionId, batchDuration, tokens.length);
 
     // Process any tokens that were emitted
     for (const token of tokens) {
@@ -111,11 +130,11 @@ async function processMinerBatch(
       };
 
       // Process database operation without blocking
-      memgraphManager
-        .process(outputToken)
-        .catch((err) =>
-          console.error("Error persisting token to Memgraph:", err)
-        );
+      // memgraphManager
+      //   .process(outputToken)
+      //   .catch((err) =>
+      //     console.error("Error persisting token to Memgraph:", err)
+      //   );
     }
   } catch (err) {
     console.error("Error during batch processing:", err);
