@@ -7,63 +7,38 @@ export class ProcessMonitor {
   private totalBytesProcessed = 0;
   private totalItemsIncoming = 0;
   private totalTokensOutgoing = 0;
+  private totalTransforms = 0;
+  private totalDbTransactions = 0;
 
-  // Rate tracking with sliding windows
-  private readonly windowSize = 100; // Track rates over last 100 items
-  private ingestionTimestamps: number[] = [];
-  private emissionTimestamps: number[] = [];
-  private windowIndex = 0;
+  // Processing time tracking for capacity measurements
+  private sessionStartTime = 0;
+  private totalTransformProcessingTime = 0; // Accumulated time spent in miner
+  private totalDbProcessingTime = 0; // Accumulated time spent in database
+  private transformOperations = 0;
+  private dbOperations = 0;
+
+  // Current operation timing
+  private currentTransformStart = 0;
+  private currentDbBatchStart = 0;
+
+  constructor() {
+    this.sessionStartTime = performance.now();
+  }
 
   incrementItemsIngested(): void {
     this.totalItemsIncoming++;
-
-    // Record timestamp for rate calculation
-    const now = performance.now();
-    if (this.ingestionTimestamps.length < this.windowSize) {
-      this.ingestionTimestamps.push(now);
-    } else {
-      this.ingestionTimestamps[this.windowIndex % this.windowSize] = now;
-    }
   }
 
   incrementTokensEmitted(): void {
     this.totalTokensOutgoing++;
-
-    // Record timestamp for rate calculation
-    const now = performance.now();
-    if (this.emissionTimestamps.length < this.windowSize) {
-      this.emissionTimestamps.push(now);
-    } else {
-      this.emissionTimestamps[this.windowIndex % this.windowSize] = now;
-    }
-
-    this.windowIndex++;
   }
 
-  /**
-   * Calculate items per second based on sliding window
-   */
-  private calculateIngestionRate(): number {
-    if (this.ingestionTimestamps.length < 2) return 0;
-
-    const timestamps = [...this.ingestionTimestamps].sort((a, b) => a - b);
-    const timeSpanMs = timestamps[timestamps.length - 1] - timestamps[0];
-    const timeSpanSec = timeSpanMs / 1000;
-
-    return timeSpanSec > 0 ? timestamps.length / timeSpanSec : 0;
+  incrementTransforms(): void {
+    this.totalTransforms++;
   }
 
-  /**
-   * Calculate tokens per second based on sliding window
-   */
-  private calculateEmissionRate(): number {
-    if (this.emissionTimestamps.length < 2) return 0;
-
-    const timestamps = [...this.emissionTimestamps].sort((a, b) => a - b);
-    const timeSpanMs = timestamps[timestamps.length - 1] - timestamps[0];
-    const timeSpanSec = timeSpanMs / 1000;
-
-    return timeSpanSec > 0 ? timestamps.length / timeSpanSec : 0;
+  incrementDbTransactions(): void {
+    this.totalDbTransactions++;
   }
 
   /**
@@ -86,17 +61,27 @@ export class ProcessMonitor {
       totalBytes: this.totalBytesProcessed,
       totalItemsIncoming: this.totalItemsIncoming,
       totalTokensOutgoing: this.totalTokensOutgoing,
+      totalTransforms: this.totalTransforms,
+      totalDbTransactions: this.totalDbTransactions,
       mergeRatio:
         this.totalItemsIncoming > 0
           ? (this.totalItemsIncoming - this.totalTokensOutgoing) /
             this.totalItemsIncoming
           : 0,
       compressionRatio:
-        this.totalBytesProcessed > 0
+        this.totalItemsIncoming > 0
+          ? this.totalTokensOutgoing / this.totalItemsIncoming
+          : 0,
+      bytesPerToken:
+        this.totalTokensOutgoing > 0
           ? this.totalBytesProcessed / this.totalTokensOutgoing
           : 0,
       ingestionRatePerSec: this.calculateIngestionRate(),
       emissionRatePerSec: this.calculateEmissionRate(),
+      transformRatePerSec: this.calculateTransformRate(),
+      dbTransactionRatePerSec: this.calculateDbTransactionRate(),
+      transformCapacityPerSec: this.calculateTransformCapacity(),
+      dbCapacityPerSec: this.calculateDbCapacity(),
     };
   }
 
@@ -109,10 +94,17 @@ export class ProcessMonitor {
       `Total: ${this.formatBytes(metrics.totalBytes)}, ` +
       `Items: ${metrics.totalItemsIncoming}, ` +
       `Tokens: ${metrics.totalTokensOutgoing}, ` +
+      `Transforms: ${metrics.totalTransforms}, ` +
+      `DB Persisted: ${metrics.totalDbTransactions}, ` +
       `Merge ratio: ${(metrics.mergeRatio * 100).toFixed(1)}%, ` +
       `Compression ratio: ${(metrics.compressionRatio * 100).toFixed(1)}%, ` +
-      `Ingestion: ${metrics.ingestionRatePerSec.toFixed(1)}/sec, ` +
-      `Emission: ${metrics.emissionRatePerSec.toFixed(1)}/sec`
+      `Bytes/token: ${metrics.bytesPerToken.toFixed(1)}, ` +
+      `Rates: ${metrics.ingestionRatePerSec.toFixed(1)} items/sec, ` +
+      `${metrics.emissionRatePerSec.toFixed(1)} tkns/sec, ` +
+      `Capacity: Transform ${metrics.transformCapacityPerSec.toFixed(
+        1
+      )} items/sec, ` +
+      `DB ${metrics.dbCapacityPerSec.toFixed(1)} tkns/sec`
     );
   }
 
@@ -134,9 +126,111 @@ export class ProcessMonitor {
     this.totalBytesProcessed = 0;
     this.totalItemsIncoming = 0;
     this.totalTokensOutgoing = 0;
-    this.ingestionTimestamps = [];
-    this.emissionTimestamps = [];
-    this.windowIndex = 0;
+    this.totalTransforms = 0;
+    this.totalDbTransactions = 0;
+    this.sessionStartTime = performance.now();
+    this.totalTransformProcessingTime = 0;
+    this.totalDbProcessingTime = 0;
+    this.transformOperations = 0;
+    this.dbOperations = 0;
+    this.currentTransformStart = 0;
+    this.currentDbBatchStart = 0;
+  }
+
+  /**
+   * Calculate items per second based on simplified sampling
+   */
+  private calculateIngestionRate(): number {
+    const now = performance.now();
+    const timeSpanMs = now - this.sessionStartTime;
+    const timeSpanSec = timeSpanMs / 1000;
+    return timeSpanSec > 0 ? this.totalItemsIncoming / timeSpanSec : 0;
+  }
+
+  /**
+   * Calculate tokens per second based on simplified sampling
+   */
+  private calculateEmissionRate(): number {
+    const now = performance.now();
+    const timeSpanMs = now - this.sessionStartTime;
+    const timeSpanSec = timeSpanMs / 1000;
+    return timeSpanSec > 0 ? this.totalTokensOutgoing / timeSpanSec : 0;
+  }
+
+  /**
+   * Calculate transforms per second based on simplified sampling
+   */
+  private calculateTransformRate(): number {
+    const now = performance.now();
+    const timeSpanMs = now - this.sessionStartTime;
+    const timeSpanSec = timeSpanMs / 1000;
+    return timeSpanSec > 0 ? this.totalTransforms / timeSpanSec : 0;
+  }
+
+  /**
+   * Calculate db transactions per second based on simplified sampling
+   */
+  private calculateDbTransactionRate(): number {
+    const now = performance.now();
+    const timeSpanMs = now - this.sessionStartTime;
+    const timeSpanSec = timeSpanMs / 1000;
+    return timeSpanSec > 0 ? this.totalDbTransactions / timeSpanSec : 0;
+  }
+
+  /**
+   * Start timing a transform operation
+   */
+  startTransformTiming(): void {
+    this.currentTransformStart = performance.now();
+  }
+
+  /**
+   * End timing a transform operation
+   */
+  endTransformTiming(): void {
+    if (this.currentTransformStart > 0) {
+      const duration = performance.now() - this.currentTransformStart;
+      this.totalTransformProcessingTime += duration;
+      this.transformOperations++;
+      this.currentTransformStart = 0;
+    }
+  }
+
+  /**
+   * Start timing a database batch operation
+   */
+  startDbBatchTiming(): void {
+    this.currentDbBatchStart = performance.now();
+  }
+
+  /**
+   * End timing a database batch operation
+   */
+  endDbBatchTiming(): void {
+    if (this.currentDbBatchStart > 0) {
+      const duration = performance.now() - this.currentDbBatchStart;
+      this.totalDbProcessingTime += duration;
+      this.dbOperations++;
+      this.currentDbBatchStart = 0;
+    }
+  }
+
+  /**
+   * Calculate actual transform capacity (items/sec when actively processing)
+   */
+  private calculateTransformCapacity(): number {
+    if (this.totalTransformProcessingTime === 0) return 0;
+    const timeSpanSec = this.totalTransformProcessingTime / 1000;
+    return timeSpanSec > 0 ? this.totalTransforms / timeSpanSec : 0;
+  }
+
+  /**
+   * Calculate actual database capacity (tokens/sec when actively processing)
+   */
+  private calculateDbCapacity(): number {
+    if (this.totalDbProcessingTime === 0) return 0;
+    const timeSpanSec = this.totalDbProcessingTime / 1000;
+    return timeSpanSec > 0 ? this.totalDbTransactions / timeSpanSec : 0;
   }
 }
 
@@ -144,8 +238,15 @@ export interface ProcessMetrics {
   totalBytes: number;
   totalItemsIncoming: number;
   totalTokensOutgoing: number;
+  totalTransforms: number;
+  totalDbTransactions: number;
   mergeRatio: number;
   compressionRatio: number;
+  bytesPerToken: number;
   ingestionRatePerSec: number;
   emissionRatePerSec: number;
+  transformRatePerSec: number;
+  dbTransactionRatePerSec: number;
+  transformCapacityPerSec: number;
+  dbCapacityPerSec: number;
 }

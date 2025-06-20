@@ -16,7 +16,7 @@
     "test:dry": "bun src/index.ts \"../../test-files/*.txt\" --dry-run --verbose",
     "start": "bun src/index.ts",
     "cli:sm": "bun src/index.ts send \"./test-files/sm.txt\" --batch-size 10 --interval 10 --verbose",
-    "cli:md": "bun src/index.ts send \"./test-files/md.txt\" --batch-size 50 --interval 1 --verbose",
+    "cli:md": "bun src/index.ts send \"./test-files/md.txt\" --batch-size 100 --interval 100 --verbose",
     "cli:lg": "bun src/index.ts send \"./test-files/lg.txt\" --batch-size 100 --interval 1 --verbose",
     "cli:xl": "bun src/index.ts send \"./test-files/xl.txt\" --batch-size 250 --interval 1 --verbose",
     "cli:replay": "bun src/index.ts replay"

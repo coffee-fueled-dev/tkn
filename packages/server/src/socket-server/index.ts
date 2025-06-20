@@ -33,13 +33,14 @@ export const startSocketServer = () =>
         const sessionId = randomUUIDv7();
         const symbolTable = new SymbolTable();
         const tknMiner = new TknMiner();
+        const monitor = new ProcessMonitor();
         const memgraphManager = new MemgraphManager(
           sessionId,
           memgraphDriver,
-          symbolTable
+          symbolTable,
+          monitor
         );
         const messageBuffer = createMessageBuffer(8192, PROTOCOL_HEADER_SIZE);
-        const monitor = new ProcessMonitor();
 
         socket.data = {
           sessionId,
@@ -55,9 +56,7 @@ export const startSocketServer = () =>
         console.info(`🔗 Session ${sessionId} connected`);
       },
       async close(socket) {
-        const { sessionId, monitor } = socket.data;
-
-        console.info(`🔌 Session ${sessionId} disconnected`);
+        const { sessionId, monitor, memgraphManager } = socket.data;
 
         // Wait for any remaining processing to complete before cleanup
         while (
@@ -70,6 +69,29 @@ export const startSocketServer = () =>
           await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
         }
 
+        // Wait for all Memgraph operations to complete
+        while (
+          memgraphManager.isCurrentlyProcessing() ||
+          memgraphManager.getQueueLength() > 0
+        ) {
+          console.log(
+            `Waiting for session ${sessionId} to finish database operations (${Math.ceil(
+              memgraphManager.getQueueLength() / 200
+            )} operations remaining)...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
+        }
+
+        // Mark session as completed in the graph database
+        try {
+          await memgraphManager.markSessionCompleted();
+        } catch (err) {
+          console.error(
+            `Failed to mark session ${sessionId} as completed:`,
+            err
+          );
+        }
+
         // Log session completion with formatted message
         console.info(
           `📋 Session ${sessionId} completed: ${monitor.getConsoleMessage()}`
@@ -78,6 +100,8 @@ export const startSocketServer = () =>
         socket.data.symbolTable.clear();
         socket.data.messageBuffer.clear();
         socket.data.monitor.reset();
+
+        console.info(`🔌 Session ${sessionId} disconnected`);
       },
       error(err) {
         console.error("❌ Socket error:", err);

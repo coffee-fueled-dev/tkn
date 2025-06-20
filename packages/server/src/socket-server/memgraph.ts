@@ -18,23 +18,66 @@ interface QueuedOperation {
   callback: (error: Error | null) => void;
 }
 
+interface BatchedToken {
+  token: OutputToken;
+  tokenValue: string;
+  lookupKeys: string;
+  valueMappings: Array<{ key: string; value: string }>;
+  callback: (error: Error | null) => void;
+}
+
 export class MemgraphManager {
   private sessionId: string;
   private tenantId: string;
   private driver: Driver;
   private symbolTable?: SymbolTable;
+  private monitor?: any; // ProcessMonitor reference
   private lastTokenValue: string | null = null;
   private sequenceIndex = 0;
+  private sessionNodeCreated = false;
+
+  // Batch processing configuration
+  private readonly batchSize = 200; // Process up to 200 tokens at once
+  private readonly batchTimeoutMs = 100; // Or timeout after 100ms
 
   // Transaction queue to serialize operations
   private operationQueue: QueuedOperation[] = [];
   private isProcessing = false;
+  private batchTimeout: any = null;
 
-  constructor(sessionId: string, driver: Driver, symbolTable?: SymbolTable) {
+  constructor(
+    sessionId: string,
+    driver: Driver,
+    symbolTable?: SymbolTable,
+    monitor?: any
+  ) {
     this.sessionId = sessionId;
     this.tenantId = sessionId; // Use sessionId as tenantId for now
     this.driver = driver;
     this.symbolTable = symbolTable;
+    this.monitor = monitor;
+  }
+
+  /**
+   * Create or update the session node
+   */
+  private async ensureSessionNode(tx: any): Promise<void> {
+    if (this.sessionNodeCreated) return;
+
+    await tx.run(
+      `
+      MERGE (session:Session:$tid {id: $sessionId})
+      ON CREATE SET session.timestamp_created = timestamp()
+      ON CREATE SET session.status = 'active'
+      ON MATCH SET session.timestamp_last_seen = timestamp()
+      `,
+      {
+        sessionId: this.sessionId,
+        tid: this.tenantId,
+      }
+    );
+
+    this.sessionNodeCreated = true;
   }
 
   private encodeHashesForStorage(hashes: HashedValue[]): string {
@@ -152,32 +195,210 @@ export class MemgraphManager {
       this.operationQueue.push({ token, callback });
 
       if (!this.isProcessing) {
-        this.processQueue();
+        // If we have enough items or no timeout is set, process immediately
+        if (
+          this.operationQueue.length >= this.batchSize ||
+          !this.batchTimeout
+        ) {
+          this.processQueue();
+        } else if (!this.batchTimeout) {
+          // Set a timeout to process smaller batches
+          this.batchTimeout = setTimeout(() => {
+            this.batchTimeout = null;
+            if (!this.isProcessing && this.operationQueue.length > 0) {
+              this.processQueue();
+            }
+          }, this.batchTimeoutMs);
+        }
       }
     });
   }
 
   /**
-   * Process the queue sequentially to avoid transaction conflicts
+   * Process the queue in batches to optimize database performance
    */
   private async processQueue(): Promise<void> {
     if (this.isProcessing) return;
 
     this.isProcessing = true;
 
-    while (this.operationQueue.length > 0) {
-      const operation = this.operationQueue.shift()!;
+    // Clear any pending timeout
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
 
-      try {
-        await this.processTokenSequentially(operation.token);
-        operation.callback(null); // Signal success
-      } catch (error) {
-        console.error("Error processing token sequentially:", error);
-        operation.callback(error as Error); // Signal error
+    while (this.operationQueue.length > 0) {
+      // Prepare a batch of tokens
+      const batch: BatchedToken[] = [];
+      const batchSize = Math.min(this.batchSize, this.operationQueue.length);
+
+      for (let i = 0; i < batchSize; i++) {
+        const operation = this.operationQueue.shift()!;
+
+        try {
+          const tokenValue = this.encodeHashesForStorage(
+            operation.token.hashes
+          );
+          const tokenData = this.createStorageMappings(operation.token);
+
+          batch.push({
+            token: operation.token,
+            tokenValue,
+            lookupKeys: tokenData.keys,
+            valueMappings: tokenData.valueMappings,
+            callback: operation.callback,
+          });
+        } catch (error) {
+          operation.callback(error as Error);
+        }
+      }
+
+      if (batch.length > 0) {
+        try {
+          await this.processBatch(batch);
+          // Signal success for all tokens in the batch
+          batch.forEach((item) => item.callback(null));
+        } catch (error) {
+          console.error("Error processing token batch:", error);
+          // Signal error for all tokens in the batch
+          batch.forEach((item) => item.callback(error as Error));
+        }
       }
     }
 
     this.isProcessing = false;
+  }
+
+  /**
+   * Process a batch of tokens using UNWIND for optimal database performance
+   */
+  private async processBatch(batch: BatchedToken[]): Promise<void> {
+    const session = this.driver.session();
+    const tx = session.beginTransaction();
+
+    try {
+      // Start timing this database operation
+      if (this.monitor) {
+        this.monitor.startDbBatchTiming();
+      }
+
+      await this.ensureSessionNode(tx);
+
+      // Collect all dictionary entries from the batch
+      const allDictEntries: Array<{ key: string; value: string }> = [];
+      batch.forEach((item) => {
+        allDictEntries.push(...item.valueMappings);
+      });
+
+      // Remove duplicates by key
+      const uniqueDictEntries = allDictEntries.filter(
+        (entry, index, self) =>
+          index === self.findIndex((e) => e.key === entry.key)
+      );
+
+      // Batch insert dictionary entries using UNWIND
+      if (uniqueDictEntries.length > 0) {
+        await tx.run(
+          `
+          UNWIND $dictBatch as entry
+          MERGE (dict:Dictionary:$tid {key: entry.key})
+          ON CREATE SET dict.value = entry.value
+          ON CREATE SET dict.timestamp_created = timestamp()
+          ON MATCH SET dict.timestamp_last_seen = timestamp()
+          `,
+          {
+            dictBatch: uniqueDictEntries,
+            tid: this.tenantId,
+          }
+        );
+      }
+
+      // Prepare batch data for token creation
+      const tokenBatch = batch.map((item, index) => ({
+        tokenValue: item.tokenValue,
+        lookupKeys: item.lookupKeys,
+        tokenIdx: item.token.idx,
+        sequenceIndex: this.sequenceIndex + index,
+        prevTokenValue:
+          index === 0 ? this.lastTokenValue : batch[index - 1].tokenValue,
+      }));
+
+      // Create all tokens and relationships using UNWIND
+      await tx.run(
+        `
+        MATCH (session:Session:$tid {id: $sessionId})
+        
+        UNWIND $tokenBatch as tokenData
+        
+        // Create the token
+        MERGE (currTkn:Tkn:$tid {value: tokenData.tokenValue})
+        ON CREATE SET currTkn.session_discovered = $sid
+        ON CREATE SET currTkn.session_last_seen = $sid
+        ON CREATE SET currTkn.timestamp_created = timestamp()
+        ON MATCH SET currTkn.session_last_seen = $sid
+        ON MATCH SET currTkn.timestamp_last_seen = timestamp()
+        
+        // Link to session
+        MERGE (session)-[:OBSERVED {token_index: tokenData.tokenIdx, timestamp_created: timestamp()}]->(currTkn)
+        
+        // Create sequence relationship if there's a previous token
+        WITH currTkn, tokenData, session
+        CALL {
+          WITH currTkn, tokenData
+          WITH currTkn, tokenData
+          WHERE tokenData.prevTokenValue IS NOT NULL
+          MATCH (prevTkn:Tkn:$tid {value: tokenData.prevTokenValue})
+          MERGE (prevTkn)-[:D1 {session_index: tokenData.tokenIdx, session_id: $sid, timestamp_created: timestamp()}]->(currTkn)
+          RETURN currTkn as tkn
+          UNION
+          WITH currTkn, tokenData
+          WHERE tokenData.prevTokenValue IS NULL
+          RETURN currTkn as tkn
+        }
+        
+        // Create value relationships
+        WITH tkn, tokenData
+        WITH tkn, tokenData, split(tokenData.lookupKeys, '|') as keys
+        UNWIND range(0, size(keys) - 1) as i
+        WITH tkn, keys[i] as key, i
+        WHERE key IS NOT NULL AND key <> ''
+        MATCH (dict:Dictionary:$tid {key: key})
+        MERGE (tkn)-[r:HAS_VALUE]->(dict)
+        ON CREATE SET r.order = i
+        `,
+        {
+          tokenBatch,
+          sessionId: this.sessionId,
+          sid: this.sessionId,
+          tid: this.tenantId,
+        }
+      );
+
+      // Update sequence tracking
+      this.lastTokenValue = batch[batch.length - 1].tokenValue;
+      this.sequenceIndex += batch.length;
+
+      await tx.commit();
+
+      // End timing and track successful database token persistence (count tokens, not batches)
+      if (this.monitor) {
+        this.monitor.endDbBatchTiming();
+        // Increment by the number of tokens in this batch
+        for (let i = 0; i < batch.length; i++) {
+          this.monitor.incrementDbTransactions();
+        }
+      }
+    } catch (error) {
+      // End timing even on error
+      if (this.monitor) {
+        this.monitor.endDbBatchTiming();
+      }
+      await tx.rollback();
+      throw error;
+    } finally {
+      await session.close();
+    }
   }
 
   /**
@@ -188,6 +409,8 @@ export class MemgraphManager {
     const tx = session.beginTransaction();
 
     try {
+      await this.ensureSessionNode(tx);
+
       const tokenValue = this.encodeHashesForStorage(token.hashes);
       const tokenData = this.createStorageMappings(token);
 
@@ -248,10 +471,11 @@ export class MemgraphManager {
     tokenIdx: number
   ): Promise<void> {
     if (this.lastTokenValue) {
-      // Create token and link to previous token
+      // Create token, link to previous token, and link to session
       await tx.run(
         `
         MATCH (prevTkn:Tkn:$tid {value: $prevTokenValue})
+        MATCH (session:Session:$tid {id: $sessionId})
         
         MERGE (currTkn:Tkn:$tid {value: $tokenValue})
         ON CREATE SET currTkn.session_discovered = $sid
@@ -261,6 +485,7 @@ export class MemgraphManager {
         ON MATCH SET currTkn.timestamp_last_seen = timestamp()
         
         MERGE (prevTkn)-[:D1 {session_index: $tokenIdx, session_id: $sid, timestamp_created: timestamp()}]->(currTkn)
+        MERGE (session)-[:OBSERVED {token_index: $tokenIdx, timestamp_created: timestamp()}]->(currTkn)
         
         WITH currTkn
         WITH currTkn, split($lookupKeys, '|') as keys
@@ -276,19 +501,24 @@ export class MemgraphManager {
           lookupKeys,
           tokenIdx,
           sid: this.sessionId,
+          sessionId: this.sessionId,
           tid: this.tenantId,
         }
       );
     } else {
-      // First token - just create it and tag it with the session ID
+      // First token - create it and link to session
       await tx.run(
         `
+        MATCH (session:Session:$tid {id: $sessionId})
+        
         MERGE (tkn:Tkn:$tid {value: $tokenValue})
         ON CREATE SET tkn.session_discovered = $sid
         ON CREATE SET tkn.session_last_seen = $sid
         ON CREATE SET tkn.timestamp_created = timestamp()
         ON MATCH SET tkn.session_last_seen = $sid
         ON MATCH SET tkn.timestamp_last_seen = timestamp()
+        
+        MERGE (session)-[:OBSERVED {token_index: 0, timestamp_created: timestamp()}]->(tkn)
         
         WITH tkn
         WITH tkn, split($lookupKeys, '|') as keys
@@ -302,9 +532,32 @@ export class MemgraphManager {
           tokenValue,
           lookupKeys,
           sid: this.sessionId,
+          sessionId: this.sessionId,
           tid: this.tenantId,
         }
       );
+    }
+  }
+
+  /**
+   * Mark session as completed
+   */
+  async markSessionCompleted(): Promise<void> {
+    const session = this.driver.session();
+    try {
+      await session.run(
+        `
+        MATCH (s:Session:$tid {id: $sessionId})
+        SET s.status = 'completed'
+        SET s.timestamp_completed = timestamp()
+        `,
+        {
+          sessionId: this.sessionId,
+          tid: this.tenantId,
+        }
+      );
+    } finally {
+      await session.close();
     }
   }
 
@@ -345,5 +598,6 @@ export class MemgraphManager {
     this.sessionId = randomUUIDv7();
     this.operationQueue = [];
     this.isProcessing = false;
+    this.sessionNodeCreated = false;
   }
 }
