@@ -56,52 +56,8 @@ services:
       timeout: 10s
       retries: 3
 
-  # Prometheus Monitoring
-  prometheus:
-    image: prom/prometheus:v2.48.0
-    container_name: tkn-prometheus
-    ports:
-      - "9091:9090"    # Prometheus web UI
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--storage.tsdb.retention.time=15d'
-      - '--web.enable-lifecycle'
-      - '--web.enable-admin-api'
-    depends_on:
-      tkn-server:
-        condition: service_healthy
-    networks:
-      - tkn-network
-    restart: unless-stopped
-
-  # Grafana Dashboard (Optional)
-  grafana:
-    image: grafana/grafana:10.2.0
-    container_name: tkn-grafana
-    ports:
-      - "3002:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on:
-      - prometheus
-    networks:
-      - tkn-network
-    restart: unless-stopped
-
 volumes:
   memgraph_data:
-  prometheus_data:
-  grafana_data:
 
 networks:
   tkn-network:

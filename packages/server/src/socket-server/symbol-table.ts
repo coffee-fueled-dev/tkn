@@ -1,8 +1,3 @@
-/**
- * SymbolTable - Handles conversion between arbitrary data and buffer hashes
- * Provides efficient storage and lookup of original data using fast cyrb53 hashing
- */
-
 import { LRUCache } from "lru-cache";
 import { type HashedValue, cyrb53, cyrb53FromBytes } from "./cyrb53";
 
@@ -62,7 +57,6 @@ export class SymbolTable {
   }
 
   private computeBinaryHash(data: Uint8Array): HashedValue {
-    // Use a binary-specific cache key to avoid string conversion
     const cacheKey = `bin:${data.length}:${data[0] || 0}:${
       data[data.length - 1] || 0
     }`;
@@ -72,7 +66,6 @@ export class SymbolTable {
       return cachedHash;
     }
 
-    // Hash bytes directly without string conversion (major optimization)
     const hashArray = cyrb53FromBytes(data, 0, this.hashSize);
     const hashClone = new Uint8Array(hashArray);
     this.valueToHashCache.set(cacheKey, hashClone);

@@ -3,21 +3,31 @@
   "version": "1.0.0",
   "type": "module",
   "bin": {
-    "tkn-send": "./src/index.ts"
+    "tkn-send": "./dist/tkn-send"
   },
+  "main": "./dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outfile tkn-send --target bun",
+    "build": "bun build src/index.ts --outfile dist/tkn-send --target bun && chmod +x dist/tkn-send",
+    "build:js": "bun build src/index.ts --outfile dist/index.js --target node",
     "dev": "bun --watch src/index.ts",
+    "clean": "rm -rf dist",
     "help": "bun src/index.ts --help",
     "test": "bun src/index.ts --help",
-    "start": "bun src/index.ts"
+    "test:dry": "bun src/index.ts \"../../test-files/*.txt\" --dry-run --verbose",
+    "start": "bun src/index.ts",
+    "cli:sm": "bun src/index.ts \"./test-files/sm.txt\" --batch-size 10 --interval 500 --verbose --port 4001",
+    "cli:md": "bun src/index.ts \"./test-files/md.txt\" --batch-size 50 --interval 200 --verbose --port 4001",
+    "cli:lg": "bun src/index.ts \"./test-files/lg.txt\" --batch-size 100 --interval 100 --port 4001",
+    "cli:xl": "bun src/index.ts \"./test-files/xl.txt\" --batch-size 25 --interval 300 --verbose --port 4001",
+    "cli:all": "bun src/index.ts \"./test-files/*.txt\" --batch-size 25 --interval 300 --verbose --port 4001"
   },
   "dependencies": {
     "fast-glob": "^3.3.2",
     "tkn-client": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bun-types": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

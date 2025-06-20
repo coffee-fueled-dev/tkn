@@ -6,10 +6,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir ./dist --target node",
-    "example:batch": "bun examples/batch-emitter.ts",
-    "example:file-reader": "bun examples/batched-file-reader.ts",
-    "example:demo": "bun examples/tkn-batch-example.ts"
+    "build": "bun build src/index.ts --outdir ./dist --target node"
   },
   "devDependencies": {
     "@types/bun": "latest"
