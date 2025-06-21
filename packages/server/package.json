@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "bun src/index.ts",
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir ./dist --target bun",
+    "build:baseline": "cd src/baseline && python3 -m pip install --user tokenizers datasets && python3 build_bpe_baseline.py --vocab-size 2048 --max-stories 50000 --output-dir tokenizers",
+    "build:baseline:force": "rm -rf tokenizers && bun run build:baseline"
   },
   "devDependencies": {
     "@types/bun": "latest",

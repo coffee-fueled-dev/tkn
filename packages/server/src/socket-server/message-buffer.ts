@@ -1,3 +1,6 @@
+const HEADER_SIZE = 5;
+const BUFFER_SIZE = 8192;
+
 export interface Message {
   type: number;
   data: Uint8Array;
@@ -72,8 +75,8 @@ export class MessageBuffer {
 }
 
 export function createMessageBuffer(
-  initialSize?: number,
-  headerSize?: number
+  initialSize: number = BUFFER_SIZE,
+  headerSize: number = HEADER_SIZE
 ): MessageBuffer {
   return new MessageBuffer(initialSize, headerSize);
 }

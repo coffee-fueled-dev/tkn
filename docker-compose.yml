@@ -47,6 +47,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./packages/server/src:/app/src:ro
+      - ./tokenizers:/app/tokenizers:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s

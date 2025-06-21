@@ -1,8 +1,4 @@
-export interface BatchItem {
-  data: string;
-}
-
-export function parseMessage(rawData: any): BatchItem[] {
+export function parseMessage(rawData: Uint8Array<ArrayBufferLike>): string[] {
   try {
     if (rawData instanceof Uint8Array) {
       const text = new TextDecoder().decode(rawData);
@@ -18,7 +14,7 @@ export function parseMessage(rawData: any): BatchItem[] {
   }
 }
 
-function parseDelimitedText(text: string): BatchItem[] {
+function parseDelimitedText(text: string): string[] {
   const lines = text.split("\n").filter((line) => line.length > 0);
-  return lines.map((line) => ({ data: line }));
+  return lines;
 }

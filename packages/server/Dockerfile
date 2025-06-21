@@ -12,12 +12,15 @@ COPY package.json bun.lock* ./
 # Install dependencies
 RUN bun install --frozen-lockfile --production
 
-# Copy source code
+# Install Python for baseline building
+# RUN apk add --no-cache python3 py3-pip
+
+# Copy source code and build scripts
 COPY src ./src
 COPY tsconfig.json ./
 
-# Build the application (if needed)
-RUN bun build src/index.ts --outdir ./dist --target bun
+# Build the application (includes BPE baseline generation)
+RUN bun run build
 
 # Expose ports
 EXPOSE 3000

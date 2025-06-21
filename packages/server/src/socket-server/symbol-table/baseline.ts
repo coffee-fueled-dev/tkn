@@ -1,15 +1,88 @@
-import { memgraphDriver, type MemgraphManager } from "../memgraph";
+import { memgraphDriver } from "../memgraph";
 import type { SymbolTable } from "./symbol-table";
+
+export const baseline = {
+  bpe: {
+    tinyStoriesEnglish,
+  },
+  pagerank: pagerankHistorical,
+};
+
+/**
+ * Preload symbol table with BPE baseline tokens to reduce cold start times
+ * @param symbolTable - The symbol table to preload
+ */
+async function tinyStoriesEnglish(symbolTable: SymbolTable): Promise<number> {
+  try {
+    // Try to import the BPE baseline data
+    let baselineData: any = null;
+
+    try {
+      // Import the generated BPE baseline
+      const bpeModule = await import(
+        "../../baseline/tokenizers/tkn_bpe_preload_2048.json"
+      );
+      baselineData = bpeModule.default || bpeModule;
+      console.info(
+        "📦 Loading BPE baseline from: src/baseline/tokenizers/tkn_bpe_preload_2048.json"
+      );
+    } catch (importError) {
+      console.info("📝 No BPE baseline file found, skipping BPE preloading");
+      return 0;
+    }
+
+    // Handle new format: direct hash keys -> token data
+    if (typeof baselineData === "object" && !Array.isArray(baselineData)) {
+      let preloadedCount = 0;
+      for (const [hashKey, tokenInfo] of Object.entries(baselineData)) {
+        try {
+          // Convert hash from base64 back to Uint8Array
+          const hashBuffer = Buffer.from(hashKey, "base64");
+          const hashArray = new Uint8Array(hashBuffer);
+
+          // Extract token data
+          const tokenData = (tokenInfo as any).data;
+
+          // Preload the token into symbol table
+          symbolTable.preloadMapping(hashArray, tokenData);
+          preloadedCount++;
+
+          // Log first few tokens for debugging
+          if (preloadedCount <= 5) {
+            const tokenId = (tokenInfo as any).token_id;
+            console.info(
+              `  🔤 Preloaded BPE token: "${tokenData}" (id: ${tokenId})`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `⚠️  Failed to preload BPE token: ${(tokenInfo as any)?.data}`,
+            err
+          );
+        }
+      }
+
+      console.info(
+        `✅ Preloaded ${preloadedCount} BPE baseline tokens (cyrb53 compatible)`
+      );
+      return preloadedCount;
+    }
+
+    console.warn("⚠️  Invalid BPE baseline format, skipping");
+    return 0;
+  } catch (error) {
+    console.warn("⚠️  Failed to load BPE baseline:", error);
+    return 0;
+  }
+}
 
 /**
  * Preload symbol table with high-confidence tokens from the database
  * @param symbolTable - The symbol table to preload
- * @param memgraphManager - The memgraph manager instance
  * @param sessionId - Optional session ID to preload session-specific tokens
  */
-export async function preloadSymbolTable(
+async function pagerankHistorical(
   symbolTable: SymbolTable,
-  memgraphManager: MemgraphManager,
   sessionId?: string
 ): Promise<void> {
   try {
@@ -128,9 +201,7 @@ export async function preloadSymbolTable(
     const duration = endTime - startTime;
 
     console.info(
-      `✅ Preloaded ${preloadedCount} high-confidence tokens in ${duration.toFixed(
-        2
-      )}ms`
+      `✅ Preloaded ${preloadedCount} tokens total in ${duration.toFixed(2)}ms`
     );
 
     if (preloadedCount > 5) {

@@ -56,17 +56,41 @@ get_files() {
     if [ "$MODE" = "git" ]; then
         git ls-files
     else
-        # Directory mode - find all files, excluding common patterns
-        find "$TARGET_DIR" -type f \
-            ! -path "*/.*" \
-            ! -path "*/node_modules/*" \
-            ! -path "*/venv/*" \
-            ! -path "*/__pycache__/*" \
-            ! -path "*/build/*" \
-            ! -path "*/dist/*" \
-            ! -path "*/target/*" \
-            ! -path "*/.git/*" \
-            | sed "s|^$TARGET_DIR/||"
+        # Directory mode - check if we're in a git repo to respect .gitignore
+        if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # Use git ls-files with the target directory to respect .gitignore
+            local git_root=$(git rev-parse --show-toplevel)
+            
+            # Get relative path from git root to target directory (macOS compatible)
+            local relative_path
+            if [ "$TARGET_DIR" = "$git_root" ]; then
+                relative_path="."
+            else
+                # Remove git root prefix and leading slash
+                relative_path="${TARGET_DIR#$git_root/}"
+            fi
+            
+            # Use git ls-files to get files in the target directory, respecting .gitignore
+            cd "$git_root"
+            if [ "$relative_path" = "." ]; then
+                git ls-files
+            else
+                git ls-files | grep "^$relative_path/" | sed "s|^$relative_path/||"
+            fi
+            cd "$TARGET_DIR"
+        else
+            # Not in git repo - use find with manual exclusions
+            find "$TARGET_DIR" -type f \
+                ! -path "*/.*" \
+                ! -path "*/node_modules/*" \
+                ! -path "*/venv/*" \
+                ! -path "*/__pycache__/*" \
+                ! -path "*/build/*" \
+                ! -path "*/dist/*" \
+                ! -path "*/target/*" \
+                ! -path "*/.git/*" \
+                | sed "s|^$TARGET_DIR/||"
+        fi
     fi
 }
 
