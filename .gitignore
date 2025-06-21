@@ -1,6 +1,10 @@
 # LLM context
-test-files
 .llm-context
+tinystories_sample.txt
+tokenizers
+
+# CLI test files are now tracked with Git LFS
+# test-files (removed - now using Git LFS)
 
 
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
