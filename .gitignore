@@ -2,8 +2,6 @@
 test-files
 .llm-context
 
-datasets
-
 
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
