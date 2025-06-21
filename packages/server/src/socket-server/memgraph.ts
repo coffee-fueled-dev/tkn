@@ -3,7 +3,7 @@ import memgraph from "neo4j-driver";
 import { randomUUIDv7 } from "bun";
 import { Driver } from "neo4j-driver";
 import type { OutputToken } from "./miner";
-import { SymbolTable } from "./symbol-table";
+import { SymbolTable } from "./symbol-table/symbol-table";
 import type { HashedValue } from "./cyrb53";
 
 const { MEMGRAPH_PASS, MEMGRAPH_URI, MEMGRAPH_USER } = variables;
@@ -15,7 +15,7 @@ export const memgraphDriver = memgraph.driver(
 
 interface QueuedOperation {
   token: OutputToken;
-  callback: (error: Error | null) => void;
+  callback: (error: Error | null, outputToken: OutputToken) => void;
 }
 
 interface BatchedToken {
@@ -23,7 +23,7 @@ interface BatchedToken {
   tokenValue: string;
   lookupKeys: string;
   valueMappings: Array<{ key: string; value: string }>;
-  callback: (error: Error | null) => void;
+  callback: (error: Error | null, outputToken: OutputToken) => void;
 }
 
 export class MemgraphManager {
@@ -31,7 +31,6 @@ export class MemgraphManager {
   private tenantId: string;
   private driver: Driver;
   private symbolTable?: SymbolTable;
-  private monitor?: any; // ProcessMonitor reference
   private lastTokenValue: string | null = null;
   private sequenceIndex = 0;
   private sessionNodeCreated = false;
@@ -55,7 +54,6 @@ export class MemgraphManager {
     this.tenantId = sessionId; // Use sessionId as tenantId for now
     this.driver = driver;
     this.symbolTable = symbolTable;
-    this.monitor = monitor;
   }
 
   /**
@@ -183,8 +181,18 @@ export class MemgraphManager {
         return resolve();
       }
 
+      // Preserve the original data at queue time to prevent corruption
+      const preservedOriginalData = token.originalData
+        ? token.originalData.map((data) => {
+            // Deep clone to prevent reference corruption
+            return typeof data === "object" && data !== null
+              ? JSON.parse(JSON.stringify(data))
+              : data;
+          })
+        : undefined;
+
       // The callback for the operation queue will resolve/reject the outer promise
-      const callback = (error: Error | null) => {
+      const callback = (error: Error | null, outputToken: OutputToken) => {
         if (error) {
           reject(error);
         } else {
@@ -250,7 +258,7 @@ export class MemgraphManager {
             callback: operation.callback,
           });
         } catch (error) {
-          operation.callback(error as Error);
+          operation.callback(error as Error, operation.token);
         }
       }
 
@@ -258,11 +266,11 @@ export class MemgraphManager {
         try {
           await this.processBatch(batch);
           // Signal success for all tokens in the batch
-          batch.forEach((item) => item.callback(null));
+          batch.forEach((item) => item.callback(null, item.token));
         } catch (error) {
           console.error("Error processing token batch:", error);
           // Signal error for all tokens in the batch
-          batch.forEach((item) => item.callback(error as Error));
+          batch.forEach((item) => item.callback(error as Error, item.token));
         }
       }
     }
@@ -278,11 +286,6 @@ export class MemgraphManager {
     const tx = session.beginTransaction();
 
     try {
-      // Start timing this database operation
-      if (this.monitor) {
-        this.monitor.startDbBatchTiming();
-      }
-
       await this.ensureSessionNode(tx);
 
       // Collect all dictionary entries from the batch
@@ -380,20 +383,7 @@ export class MemgraphManager {
       this.sequenceIndex += batch.length;
 
       await tx.commit();
-
-      // End timing and track successful database token persistence (count tokens, not batches)
-      if (this.monitor) {
-        this.monitor.endDbBatchTiming();
-        // Increment by the number of tokens in this batch
-        for (let i = 0; i < batch.length; i++) {
-          this.monitor.incrementDbTransactions();
-        }
-      }
     } catch (error) {
-      // End timing even on error
-      if (this.monitor) {
-        this.monitor.endDbBatchTiming();
-      }
       await tx.rollback();
       throw error;
     } finally {

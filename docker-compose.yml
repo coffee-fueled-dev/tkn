@@ -1,5 +1,4 @@
 services:
-  # Memgraph Database
   memgraph:
     image: memgraph/memgraph-mage
     container_name: tkn-memgraph
@@ -14,7 +13,6 @@ services:
       - tkn-network
     restart: unless-stopped
 
-  # Memgraph Lab (separate container)
   memgraph-lab:
     image: memgraph/lab
     container_name: tkn-lab
@@ -29,7 +27,6 @@ services:
       - tkn-network
     restart: unless-stopped
 
-  # TKN Server Application
   tkn-server:
     build:
       context: ./packages/server
@@ -43,11 +40,8 @@ services:
       - TKN_PORT=4000
       - MEMGRAPH_URI=bolt://memgraph:7687
       - MEMGRAPH_DB_NAME=memgraph
-      - METRICS_SERVER_HOST=tkn-metrics-server
-      - METRICS_SERVER_PORT=5001
     depends_on:
       - memgraph
-      - tkn-metrics-server
     networks:
       - tkn-network
     restart: unless-stopped
@@ -59,74 +53,9 @@ services:
       timeout: 10s
       retries: 3
 
-  # TKN Metrics Server
-  tkn-metrics-server:
-    build:
-      context: ./packages/metrics-server
-      dockerfile: Dockerfile
-    container_name: tkn-metrics-server
-    ports:
-      - "5002:5000"    # Metrics HTTP port (Prometheus endpoint)
-      - "5001:5001"    # Metrics socket port (performance data)
-    environment:
-      - NODE_ENV=production
-      - METRICS_HTTP_PORT=5000
-      - METRICS_SOCKET_PORT=5001
-      - PROMETHEUS_PREFIX=tkn_
-    networks:
-      - tkn-network
-    restart: unless-stopped
-    volumes:
-      - ./packages/metrics-server/src:/app/src:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Prometheus (Metrics Storage)
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: tkn-prometheus
-    ports:
-      - "9090:9090"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    networks:
-      - tkn-network
-    restart: unless-stopped
-    depends_on:
-      - tkn-metrics-server
-
-  # Grafana (Metrics Visualization)
-  grafana:
-    image: grafana/grafana:latest
-    container_name: tkn-grafana
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-    networks:
-      - tkn-network
-    restart: unless-stopped
-    depends_on:
-      - prometheus
 
 volumes:
   memgraph_data:
-  prometheus_data:
-  grafana_data:
 
 networks:
   tkn-network:

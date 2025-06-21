@@ -1,7 +1,8 @@
-/**
- * Simple message buffer for handling binary protocol parsing
- * Handles length-prefixed messages with automatic buffer management
- */
+export interface Message {
+  type: number;
+  data: Uint8Array;
+}
+
 export class MessageBuffer {
   private buffer: Uint8Array;
   private bufferSize: number;
@@ -13,9 +14,6 @@ export class MessageBuffer {
     this.headerSize = headerSize;
   }
 
-  /**
-   * Add data to the buffer
-   */
   push(data: Uint8Array): void {
     const dataLength = data.byteLength;
 
@@ -31,11 +29,7 @@ export class MessageBuffer {
     this.bufferSize += dataLength;
   }
 
-  /**
-   * Try to extract the next complete message
-   * Returns null if no complete message is available
-   */
-  extractMessage(): { type: number; data: Uint8Array } | null {
+  extractMessage(): Message | null {
     if (this.bufferSize < this.headerSize) {
       return null;
     }
@@ -77,20 +71,9 @@ export class MessageBuffer {
   }
 }
 
-/**
- * Create a new MessageBuffer instance
- */
 export function createMessageBuffer(
   initialSize?: number,
   headerSize?: number
 ): MessageBuffer {
   return new MessageBuffer(initialSize, headerSize);
-}
-
-/**
- * Message extracted from buffer
- */
-export interface ExtractedMessage {
-  type: number;
-  data: Uint8Array;
 }

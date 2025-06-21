@@ -1,7 +1,7 @@
 import type { TCPSocket } from "bun";
 
 export interface BatchItem {
-  data: string | Uint8Array;
+  data: string; // Only strings now for maximum efficiency
 }
 
 export interface TknClientOptions {
@@ -167,11 +167,33 @@ export class TknClient {
     }
 
     try {
-      // Convert items to JSON and send as Uint8Array
-      const batchData = JSON.stringify(items);
-      const dataBuffer = new TextEncoder().encode(batchData);
+      // Use newline-delimited format for maximum efficiency
+      // Instead of JSON: [{"data":"T"},{"data":"h"}] (25 bytes)
+      // Use simple format: T\nh\n (4 bytes) - 84% reduction!
+      const delimitedData = items.map((item) => item.data).join("\n") + "\n";
+      const messageData = new TextEncoder().encode(delimitedData);
 
-      this.socket.write(dataBuffer);
+      // Create properly framed message with 5-byte header
+      // Header format: [messageType (1 byte)][messageLength (4 bytes, big-endian)]
+      const messageType = 0; // Default message type for batch data
+      const messageLength = messageData.length;
+
+      // Create header buffer (5 bytes total)
+      const headerBuffer = new Uint8Array(5);
+      headerBuffer[0] = messageType;
+      headerBuffer[1] = (messageLength >>> 24) & 0xff; // Most significant byte
+      headerBuffer[2] = (messageLength >>> 16) & 0xff;
+      headerBuffer[3] = (messageLength >>> 8) & 0xff;
+      headerBuffer[4] = messageLength & 0xff; // Least significant byte
+
+      // Combine header and message data
+      const framedMessage = new Uint8Array(
+        headerBuffer.length + messageData.length
+      );
+      framedMessage.set(headerBuffer, 0);
+      framedMessage.set(messageData, headerBuffer.length);
+
+      this.socket.write(framedMessage);
     } catch (error) {
       this.onError(error as Error);
       throw error;
@@ -181,14 +203,14 @@ export class TknClient {
   /**
    * Send a single item (convenience method)
    */
-  async sendItem(data: string | Uint8Array): Promise<void> {
+  async sendItem(data: string): Promise<void> {
     return this.sendBatch([{ data }]);
   }
 
   /**
    * Send multiple items as separate batch items
    */
-  async sendItems(items: (string | Uint8Array)[]): Promise<void> {
+  async sendItems(items: string[]): Promise<void> {
     const batch = items.map((data) => ({ data }));
     return this.sendBatch(batch);
   }

@@ -2,18 +2,14 @@
 
 import { parseArgs } from "util";
 import fg from "fast-glob";
-import { readFile } from "fs/promises";
 import { TknClient, type BatchItem } from "tkn-client";
 
 interface CliOptions {
   command: "send" | "replay" | "help";
   globOrSessionId: string;
-  batchSize: number;
-  interval: number;
   httpUrl: string;
   socketUrl: string;
   verbose: boolean;
-  dryRun: boolean;
 }
 
 function showHelp() {
@@ -33,18 +29,13 @@ Global Options:
   --socket-url <url>    Socket server URL for sending data (default: from TKN_SOCKET_URL env or localhost:4001)
   --verbose             Show detailed output
 
-Options for 'send' command only:
-  --batch-size <size>   Number of items per batch (default: 100)
-  --interval <ms>       Interval between batches in milliseconds (default: 1000)
-  --dry-run             Show what would be sent without actually sending
-
 Environment Variables:
   TKN_HTTP_URL          HTTP server URL for replay
   TKN_SOCKET_URL        Socket server host:port for sending data
 
 Examples:
   tkn send "*.txt"                           # Send all .txt files
-  tkn send "data/**/*.json" --batch-size 50  # Send JSON files in batches of 50
+  tkn send "data/**/*.json"                  # Send JSON files
   tkn replay "some-session-id-12345"         # Replay a session
 `);
 }
@@ -53,12 +44,9 @@ function parseCliArgs(): CliOptions {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
-      "batch-size": { type: "string", default: "100" },
-      interval: { type: "string", default: "1000" },
       "http-url": { type: "string", default: "" },
       "socket-url": { type: "string", default: "" },
       verbose: { type: "boolean", default: false },
-      "dry-run": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
     allowPositionals: true,
@@ -74,12 +62,9 @@ function parseCliArgs(): CliOptions {
     return {
       command: "help",
       globOrSessionId: "",
-      batchSize: 100,
-      interval: 1000,
       httpUrl: process.env.TKN_HTTP_URL || "http://localhost:4000",
       socketUrl: process.env.TKN_SOCKET_URL || "localhost:4001",
       verbose: false,
-      dryRun: false,
     };
   }
 
@@ -91,112 +76,71 @@ function parseCliArgs(): CliOptions {
   return {
     command,
     globOrSessionId: positionals[1] || "",
-    batchSize: parseInt(values["batch-size"] as string),
-    interval: parseInt(values.interval as string),
     httpUrl,
     socketUrl,
     verbose: values.verbose as boolean,
-    dryRun: values["dry-run"] as boolean,
   };
 }
 
-async function readFileContent(
+async function streamFileContent(
   filePath: string,
+  client: TknClient,
   verbose: boolean
-): Promise<BatchItem[]> {
+): Promise<number> {
+  const file = Bun.file(filePath);
+  const stream = file.stream();
+
+  let totalChars = 0;
+  let buffer: BatchItem[] = [];
+  const CHUNK_SIZE = 1024; // Send in reasonable chunks
+
   try {
-    const content = await readFile(filePath, "utf8");
+    for await (const chunk of stream) {
+      const chunkStr = new TextDecoder().decode(chunk);
+
+      // Convert chunk characters to batch items
+      for (const char of chunkStr) {
+        buffer.push({ data: char });
+        totalChars++;
+
+        // Send when we have a reasonable chunk
+        if (buffer.length >= CHUNK_SIZE) {
+          await client.sendBatch(buffer);
+          if (verbose) {
+            process.stdout.write(`📤 Sent ${totalChars} chars\r`);
+          }
+          buffer = [];
+        }
+      }
+    }
+
+    // Send any remaining characters
+    if (buffer.length > 0) {
+      await client.sendBatch(buffer);
+      if (verbose) {
+        process.stdout.write(`📤 Sent ${totalChars} chars\r`);
+      }
+    }
 
     if (verbose) {
-      console.log(`📄 Read ${filePath} (${content.length} characters)`);
+      console.log(`\n✅ Completed ${filePath}: ${totalChars} characters`);
     }
 
-    // Convert each character to a batch item for TKN algorithm
-    // The TKN algorithm expects individual discrete data items (characters)
-    const characters = Array.from(content);
-
-    return characters.map((char) => ({ data: char }));
+    return totalChars;
   } catch (error) {
-    console.error(`❌ Error reading ${filePath}:`, error);
-    return [];
-  }
-}
-
-function createBatches<T>(items: T[], batchSize: number): T[][] {
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    batches.push(items.slice(i, i + batchSize));
-  }
-  return batches;
-}
-
-async function sendBatches(
-  client: TknClient,
-  batches: BatchItem[][],
-  interval: number,
-  verbose: boolean,
-  dryRun: boolean
-): Promise<void> {
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
-
-    if (dryRun) {
-      console.log(
-        `🔍 [DRY RUN] Batch ${i + 1}/${batches.length} (${batch.length} items)`
-      );
-      if (verbose) {
-        batch.slice(0, 3).forEach((item, idx) => {
-          const preview =
-            typeof item.data === "string"
-              ? item.data.slice(0, 50) + (item.data.length > 50 ? "..." : "")
-              : `[Binary data: ${item.data.length} bytes]`;
-          console.log(`   ${idx + 1}. ${preview}`);
-        });
-        if (batch.length > 3) {
-          console.log(`   ... and ${batch.length - 3} more items`);
-        }
-      }
-    } else {
-      try {
-        await client.sendBatch(batch);
-        if (verbose) {
-          console.log(
-            `✅ Sent batch ${i + 1}/${batches.length} (${batch.length} items)`
-          );
-        } else {
-          process.stdout.write(`📤 Sent batch ${i + 1}/${batches.length}\r`);
-        }
-      } catch (error) {
-        console.error(`❌ Error sending batch ${i + 1}:`, error);
-        throw error;
-      }
-    }
-
-    // Wait before sending next batch (except for the last one)
-    if (i < batches.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, interval));
-    }
-  }
-
-  if (!verbose && !dryRun) {
-    console.log(); // New line after progress
+    console.error(`❌ Error streaming ${filePath}:`, error);
+    throw error;
   }
 }
 
 async function handleSendCommand(options: CliOptions) {
-  console.log("🚀 TKN CLI starting in 'send' mode...");
+  console.log("🚀 TKN CLI - Streaming file content...");
 
   if (options.verbose) {
     console.log(`📋 Configuration:
   Glob: ${options.globOrSessionId}
-  Batch size: ${options.batchSize}
-  Interval: ${options.interval}ms
   Socket Server: ${options.socketUrl}
-  HTTP Server: ${options.httpUrl}
-  Environment Variables:
-    TKN_SOCKET_URL: ${process.env.TKN_SOCKET_URL || "(not set)"}
-    TKN_HTTP_URL: ${process.env.TKN_HTTP_URL || "(not set)"}
-  Dry run: ${options.dryRun}`);
+  HTTP Server: ${options.httpUrl}`);
   }
 
   // Find files matching the glob pattern
@@ -213,42 +157,7 @@ async function handleSendCommand(options: CliOptions) {
     files.forEach((file) => console.log(`  - ${file}`));
   }
 
-  // Read all file contents
-  console.log("📖 Reading file contents...");
-  const allItems: BatchItem[] = [];
-
-  for (const file of files) {
-    const items = await readFileContent(file, options.verbose);
-    allItems.push(...items);
-  }
-
-  if (allItems.length === 0) {
-    console.log("❌ No content found in files");
-    process.exit(1);
-  }
-
-  console.log(`📊 Total items to send: ${allItems.length}`);
-
-  // Create batches
-  const batches = createBatches(allItems, options.batchSize);
-  console.log(
-    ` Created ${batches.length} batch(es) of max ${options.batchSize} items each`
-  );
-
-  if (options.dryRun) {
-    console.log("🔍 DRY RUN MODE - No data will be sent");
-    await sendBatches(
-      null as any,
-      batches,
-      options.interval,
-      options.verbose,
-      true
-    );
-    console.log("✅ Dry run completed");
-    return;
-  }
-
-  // Connect to server and send batches
+  // Connect to server
   const client = new TknClient({
     socketUrl: options.socketUrl,
     httpUrl: options.httpUrl,
@@ -271,22 +180,29 @@ async function handleSendCommand(options: CliOptions) {
     console.log(`🔗 Connecting to ${options.socketUrl}...`);
     await client.connect();
 
-    console.log("⏳ Waiting for server to be ready...");
-    // connect() now waits for READY, but we can add explicit feedback
     if (options.verbose) {
-      console.log("✅ Server is ready, symbol table preloaded");
+      console.log("✅ Server is ready, starting stream...");
     }
 
-    console.log("📤 Sending batches...");
-    await sendBatches(
-      client,
-      batches,
-      options.interval,
-      options.verbose,
-      false
-    );
+    console.log("📤 Streaming data...");
+    let totalChars = 0;
+    const startTime = performance.now();
 
-    console.log("✅ All batches sent successfully");
+    for (const file of files) {
+      const chars = await streamFileContent(file, client, options.verbose);
+      totalChars += chars;
+    }
+
+    const endTime = performance.now();
+    const duration = (endTime - startTime) / 1000;
+    const throughput = totalChars / duration;
+
+    console.log(`\n📊 Stream completed:`);
+    console.log(`  Total characters: ${totalChars.toLocaleString()}`);
+    console.log(`  Duration: ${duration.toFixed(2)}s`);
+    console.log(
+      `  Throughput: ${Math.round(throughput).toLocaleString()} chars/sec`
+    );
   } catch (error) {
     console.error("❌ Error:", error);
     process.exit(1);

@@ -1,41 +1,13 @@
 import { variables } from "../environment";
-import type { MessageBuffer } from "./message-buffer";
+import type { Message, MessageBuffer } from "./message-buffer";
 import { TknMiner } from "./miner";
-import { SymbolTable } from "./symbol-table";
+import { SymbolTable } from "./symbol-table/symbol-table";
 import { processBatch } from "./process-batch";
 import { randomUUIDv7 } from "bun";
 import { createMessageBuffer } from "./message-buffer";
 import { PROTOCOL_HEADER_SIZE } from "./process-batch";
 import { memgraphDriver, MemgraphManager } from "./memgraph";
-import { TknMetricsClient } from "./metrics-client";
-import type { BatchItem } from "./parse-to-batch";
-
-/**
- * Preload symbol table with high-confidence tokens from the database
- */
-async function preloadSymbolTable(
-  symbolTable: SymbolTable,
-  memgraphManager: MemgraphManager
-): Promise<void> {
-  try {
-    // TODO: Implement PageRank query to get high-confidence tokens
-    // For now, this is a placeholder that will be implemented in step 2
-    console.info(
-      "🔄 Symbol table preloading placeholder - will implement PageRank query next"
-    );
-
-    // Simulate some preloading work
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // In the next step, we'll implement:
-    // 1. Query database for tokens with highest PageRank scores
-    // 2. Load them into the symbol table
-    // 3. Set up the initial state for faster processing
-  } catch (error) {
-    console.error("Failed to preload symbol table:", error);
-    throw error;
-  }
-}
+import { parseMessage, type BatchItem } from "./parse-message";
 
 export type SocketData = {
   sessionId: string;
@@ -45,8 +17,15 @@ export type SocketData = {
   messageBuffer: MessageBuffer;
   processingQueue: BatchItem[];
   isProcessing: boolean;
-  sessionStartTime: number; // Just for basic session duration tracking
-  metricsClient: TknMetricsClient; // One metrics client per session
+  sessionStartTime: number;
+  sessionBytesReceived: number;
+  networkBytesReceived: number;
+  operationCount: number;
+  tokenCount: number;
+  dataProcessingStartTime: number | null;
+  dataReceptionEndTime: number | null;
+  lastDataReceivedTime: number | null;
+  processingCompletedTime: number | null;
 };
 
 export const startSocketServer = () =>
@@ -55,13 +34,43 @@ export const startSocketServer = () =>
     port: variables.TKN_PORT + 1,
     socket: {
       data(socket, data) {
-        processBatch(socket, data);
+        // Track actual network bytes received
+        const networkBytes =
+          data instanceof Uint8Array ? data.length : Buffer.byteLength(data);
+        socket.data.networkBytesReceived += networkBytes;
+
+        // Track data reception timing
+        const now = performance.now();
+        if (socket.data.dataProcessingStartTime === null) {
+          socket.data.dataProcessingStartTime = now;
+          const sessionTime = now - socket.data.sessionStartTime;
+          console.log(
+            `📥 First data packet: ${networkBytes} bytes at session+${sessionTime.toFixed(
+              2
+            )}ms`
+          );
+        }
+        socket.data.lastDataReceivedTime = now;
+
+        // Log every data packet for debugging
+        console.log(
+          `📦 Data packet: ${networkBytes} bytes, Total: ${socket.data.networkBytesReceived} bytes`
+        );
+
+        socket.data.messageBuffer.push(data);
+
+        let message;
+        while (
+          (message = socket.data.messageBuffer.extractMessage()) !== null
+        ) {
+          const items = parseMessage(message.data);
+          processBatch(socket, items);
+        }
       },
       async open(socket) {
         const sessionId = randomUUIDv7();
         const symbolTable = new SymbolTable();
         const tknMiner = new TknMiner();
-        const metricsClient = new TknMetricsClient();
         const memgraphManager = new MemgraphManager(
           sessionId,
           memgraphDriver,
@@ -78,25 +87,23 @@ export const startSocketServer = () =>
           processingQueue: [],
           isProcessing: false,
           sessionStartTime: performance.now(),
-          metricsClient,
+          sessionBytesReceived: 0,
+          networkBytesReceived: 0,
+          operationCount: 0,
+          tokenCount: 0,
+          dataProcessingStartTime: null,
+          dataReceptionEndTime: null,
+          lastDataReceivedTime: null,
+          processingCompletedTime: null,
         };
 
         console.info(`🔗 Session ${sessionId} connected`);
 
-        // Preload symbol table with high-confidence tokens
         try {
           console.info(
             `⏳ Preloading symbol table for session ${sessionId}...`
           );
-          await preloadSymbolTable(symbolTable, memgraphManager);
-          console.info(`✅ Symbol table preloaded for session ${sessionId}`);
 
-          // Send session start event to metrics server
-          metricsClient.sessionStart(sessionId, {
-            preloadCompleted: true,
-          });
-
-          // Send READY signal to client
           socket.write("READY");
         } catch (error) {
           console.error(
@@ -104,21 +111,30 @@ export const startSocketServer = () =>
             error
           );
 
-          // Send session start event even if preload failed
-          metricsClient.sessionStart(sessionId, {
-            preloadCompleted: false,
-            preloadError:
-              error instanceof Error ? error.message : String(error),
-          });
-
-          // Send READY anyway to not block the client, but log the error
           socket.write("READY");
         }
       },
       async close(socket) {
         const { sessionId, memgraphManager } = socket.data;
 
-        // Wait for any remaining processing to complete before cleanup
+        // Mark end of data reception
+        const closeTime = performance.now();
+        if (socket.data.lastDataReceivedTime) {
+          socket.data.dataReceptionEndTime = socket.data.lastDataReceivedTime;
+          const sessionCloseTime = closeTime - socket.data.sessionStartTime;
+          const sessionLastDataTime =
+            socket.data.lastDataReceivedTime - socket.data.sessionStartTime;
+          const gapBetweenLastDataAndClose =
+            closeTime - socket.data.lastDataReceivedTime;
+          console.log(
+            `🔌 Connection closed at session+${sessionCloseTime.toFixed(
+              2
+            )}ms, last data at session+${sessionLastDataTime.toFixed(
+              2
+            )}ms (${gapBetweenLastDataAndClose.toFixed(2)}ms gap)`
+          );
+        }
+
         while (
           socket.data.isProcessing ||
           socket.data.processingQueue.length > 0
@@ -129,7 +145,6 @@ export const startSocketServer = () =>
           await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
         }
 
-        // Wait for all Memgraph operations to complete
         while (
           memgraphManager.isCurrentlyProcessing() ||
           memgraphManager.getQueueLength() > 0
@@ -142,7 +157,6 @@ export const startSocketServer = () =>
           await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
         }
 
-        // Mark session as completed in the graph database
         try {
           await memgraphManager.markSessionCompleted();
         } catch (err) {
@@ -152,22 +166,60 @@ export const startSocketServer = () =>
           );
         }
 
-        // Send session end event to metrics server
-        const sessionDuration =
-          performance.now() - socket.data.sessionStartTime;
-        socket.data.metricsClient.sessionEnd(sessionId, {
-          sessionDuration: sessionDuration / 1000, // Convert to seconds
-        });
+        const now = performance.now();
+        const sessionDuration = now - socket.data.sessionStartTime;
+        const dataReceptionDuration =
+          socket.data.dataReceptionEndTime &&
+          socket.data.dataProcessingStartTime
+            ? socket.data.dataReceptionEndTime -
+              socket.data.dataProcessingStartTime
+            : 0;
+        const actualProcessingDuration =
+          socket.data.processingCompletedTime &&
+          socket.data.dataProcessingStartTime
+            ? socket.data.processingCompletedTime -
+              socket.data.dataProcessingStartTime
+            : 0;
 
-        // Disconnect the metrics client for this session
-        await socket.data.metricsClient.disconnect();
+        const metrics = {
+          sessionId,
+          timing: {
+            sessionDurationMs: sessionDuration,
+            dataReceptionDurationMs: dataReceptionDuration,
+            actualProcessingDurationMs: actualProcessingDuration,
+            cleanupDurationMs:
+              now - (socket.data.processingCompletedTime || now),
+          },
+          data: {
+            sessionBytesReceived: socket.data.sessionBytesReceived,
+            networkBytesReceived: socket.data.networkBytesReceived,
+            operationCount: socket.data.operationCount,
+            tokenCount: socket.data.tokenCount,
+          },
+          throughput: {
+            dataReceptionRate:
+              dataReceptionDuration > 0
+                ? socket.data.sessionBytesReceived /
+                  (dataReceptionDuration / 1000)
+                : 0,
+            networkReceptionRate:
+              dataReceptionDuration > 0
+                ? socket.data.networkBytesReceived /
+                  (dataReceptionDuration / 1000)
+                : 0,
+            actualProcessingRate:
+              actualProcessingDuration > 0
+                ? socket.data.operationCount / (actualProcessingDuration / 1000)
+                : 0,
 
-        // Log session completion
-        console.info(
-          `📋 Session ${sessionId} completed (${(
-            sessionDuration / 1000
-          ).toFixed(2)}s)`
-        );
+            tokenGenerationRate:
+              actualProcessingDuration > 0
+                ? socket.data.tokenCount / (actualProcessingDuration / 1000)
+                : 0,
+          },
+        };
+
+        console.info(JSON.stringify(metrics, null, 2));
 
         socket.data.symbolTable.clear();
         socket.data.messageBuffer.clear();

@@ -1,5 +1,5 @@
 import { LRUCache } from "lru-cache";
-import { type HashedValue, cyrb53, cyrb53FromBytes } from "./cyrb53";
+import { type HashedValue, cyrb53, cyrb53FromBytes } from "../cyrb53";
 
 export class SymbolTable {
   private table = new Map<string, any>();
@@ -137,5 +137,10 @@ export class SymbolTable {
     this.valueToHashCache.clear();
     this.stringCache.clear();
     this.hashToKeyCache.clear();
+  }
+
+  preloadMapping(hash: HashedValue, data: any): void {
+    const key = this.createStorageKey(hash);
+    this.storeValue(key, data);
   }
 }
