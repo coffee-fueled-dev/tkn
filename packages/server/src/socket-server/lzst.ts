@@ -1,8 +1,4 @@
-import {
-  type KeyGenerator,
-  keyGenerators,
-  type TokenCache,
-} from "./key-generators";
+import type { TokenCache } from "./token-cache";
 
 export interface OutputToken {
   buffer: Uint8Array;
@@ -47,20 +43,13 @@ export class LZST {
   private cache: TokenCache;
   private windowBuffer: Uint8Array;
   private windowSize: number = 0;
-  private windowStart: number = 0; // Start index for circular buffer
   private maxWindowSize: number;
   private sessionIndex: number = 0;
-  private keyGenerator: KeyGenerator;
 
-  constructor(
-    cache: TokenCache,
-    maxWindowSize: number = 1024,
-    keyGenerator: KeyGenerator = keyGenerators.fastHash
-  ) {
+  constructor(cache: TokenCache, maxWindowSize: number = 1024) {
     this.cache = cache;
     this.maxWindowSize = maxWindowSize;
     this.windowBuffer = new Uint8Array(maxWindowSize);
-    this.keyGenerator = keyGenerator;
   }
 
   /**
@@ -78,16 +67,12 @@ export class LZST {
         this.windowBuffer[this.windowSize - 1] = byte;
       }
 
-      const currentWindowKey = this.keyGenerator(
-        this.windowBuffer,
-        this.windowSize
-      );
-
-      if (this.cache.has(currentWindowKey)) {
+      const currentWindow = this.windowBuffer.subarray(0, this.windowSize);
+      if (this.cache.contains(currentWindow)) {
         /*
          * This is the progression block -- the next step will grow this window by one byte
          */
-        this.cache.set(currentWindowKey, true);
+        this.cache.add(currentWindow);
         return { error: null, data: null };
       }
 
@@ -108,14 +93,9 @@ export class LZST {
           0,
           this.windowSize - 1
         );
-        // Calculate previous window hash (one byte shorter)
-        const previousWindowKey = this.keyGenerator(
-          previousWindow,
-          this.windowSize - 1
-        );
 
-        this.cache.set(previousWindowKey, true);
-        this.cache.set(currentWindowKey, true);
+        this.cache.add(previousWindow);
+        this.cache.add(currentWindow);
 
         try {
           token = this.constructToken(previousWindow);
@@ -138,7 +118,7 @@ export class LZST {
          */
         const currentWindow = this.windowBuffer.subarray(0, this.windowSize);
         token = this.constructToken(currentWindow);
-        this.cache.set(currentWindowKey, true);
+        this.cache.add(currentWindow);
 
         this.windowSize = 0;
 
@@ -180,15 +160,12 @@ export class LZST {
   flush(): LZSTResult {
     if (this.windowSize > 0) {
       const finalWindow = this.windowBuffer.subarray(0, this.windowSize);
-      const finalWindowKey = this.keyGenerator(finalWindow, this.windowSize);
-
-      this.cache.set(finalWindowKey, true);
+      this.cache.add(finalWindow);
 
       try {
         const token = this.constructToken(finalWindow);
 
         this.windowSize = 0;
-        this.windowStart = 0;
 
         return { error: null, data: token };
       } catch (error) {
@@ -205,7 +182,6 @@ export class LZST {
   clear(): void {
     this.cache.clear();
     this.windowSize = 0;
-    this.windowStart = 0;
     this.windowBuffer = new Uint8Array(this.maxWindowSize);
     this.sessionIndex = 0;
   }
