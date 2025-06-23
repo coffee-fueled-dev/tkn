@@ -15,3 +15,10 @@ export interface Observation {
 export interface TokenBatch {
   tokens: Token[];
 }
+
+export interface BatchBin {
+  id: number;
+  tokens: Token[];
+  timer: Timer | null;
+  isProcessing: boolean;
+}
