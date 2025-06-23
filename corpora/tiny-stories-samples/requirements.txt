@@ -1,0 +1,2 @@
+# Required for downloading TinyStories dataset
+datasets>=2.0.0 

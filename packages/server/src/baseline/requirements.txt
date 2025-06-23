@@ -1,6 +1,0 @@
-# Required for proper BPE tokenization
-tokenizers>=0.15.0
-
-# Optional: Only needed if downloading TinyStories automatically
-# Can also provide your own text file with --input-file
-datasets>=2.14.0 

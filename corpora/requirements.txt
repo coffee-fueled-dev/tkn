@@ -1,0 +1,2 @@
+# Required for BPE tokenization
+tokenizers>=0.15.0 

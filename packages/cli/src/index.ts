@@ -36,6 +36,7 @@ Environment Variables:
 Examples:
   tkn send "*.txt"                           # Send all .txt files
   tkn send "data/**/*.json"                  # Send JSON files
+  tkn send "corpora/**/*.txt"                # Send corpus files (when in project root)
   tkn replay "some-session-id-12345"         # Replay a session
 `);
 }

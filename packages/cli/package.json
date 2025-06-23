@@ -13,12 +13,7 @@
     "clean": "rm -rf dist",
     "help": "bun src/index.ts --help",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "bun src/index.ts",
-    "cli:sm": "bun src/index.ts send \"./test-files/sm.txt\" --verbose",
-    "cli:md": "bun src/index.ts send \"./test-files/md.txt\" --verbose",
-    "cli:lg": "bun src/index.ts send \"./test-files/lg.txt\"",
-    "cli:xl": "bun src/index.ts send \"./test-files/xl.txt\"",
-    "cli:replay": "bun src/index.ts replay"
+    "start": "bun src/index.ts"
   },
   "dependencies": {
     "fast-glob": "^3.3.2",
