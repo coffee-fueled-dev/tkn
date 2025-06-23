@@ -1,0 +1,12 @@
+# Build artifacts
+dist/
+tokenizers/
+src/baseline/tokenizers/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# TinyStories sample data
+src/baseline/tinystories_sample.txt 
