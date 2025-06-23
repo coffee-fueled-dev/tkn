@@ -10,6 +10,8 @@ interface CliOptions {
   httpUrl: string;
   socketUrl: string;
   verbose: boolean;
+  keyGenerator?: string;
+  preloader?: string;
 }
 
 function showHelp() {
@@ -27,6 +29,8 @@ Commands:
 Global Options:
   --http-url <url>      HTTP server URL for replay (default: from TKN_HTTP_URL env or http://localhost:4000)
   --socket-url <url>    Socket server URL for sending data (default: from TKN_SOCKET_URL env or localhost:4001)
+  --key-generator <kg>  Key generator to use (binaryKey, fnvHash, fastHash, simdHash)
+  --preloader <pl>      Preloader to use (none, tinyStories)
   --verbose             Show detailed output
 
 Environment Variables:
@@ -37,6 +41,8 @@ Examples:
   tkn send "*.txt"                           # Send all .txt files
   tkn send "data/**/*.json"                  # Send JSON files
   tkn send "corpora/**/*.txt"                # Send corpus files (when in project root)
+  tkn send "*.txt" --key-generator simdHash  # Use SIMD hash key generator
+  tkn send "*.txt" --preloader none          # Skip preloading for faster startup
   tkn replay "some-session-id-12345"         # Replay a session
 `);
 }
@@ -47,6 +53,8 @@ function parseCliArgs(): CliOptions {
     options: {
       "http-url": { type: "string", default: "" },
       "socket-url": { type: "string", default: "" },
+      "key-generator": { type: "string", default: "" },
+      preloader: { type: "string", default: "" },
       verbose: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
@@ -66,6 +74,8 @@ function parseCliArgs(): CliOptions {
       httpUrl: process.env.TKN_HTTP_URL || "http://localhost:4000",
       socketUrl: process.env.TKN_SOCKET_URL || "localhost:4001",
       verbose: false,
+      keyGenerator: undefined,
+      preloader: undefined,
     };
   }
 
@@ -80,6 +90,8 @@ function parseCliArgs(): CliOptions {
     httpUrl,
     socketUrl,
     verbose: values.verbose as boolean,
+    keyGenerator: values["key-generator"] || undefined,
+    preloader: values.preloader || undefined,
   };
 }
 
@@ -159,9 +171,15 @@ async function handleSendCommand(options: CliOptions) {
   }
 
   // Connect to server
+  const sessionConfig: any = {};
+  if (options.keyGenerator) sessionConfig.keyGenerator = options.keyGenerator;
+  if (options.preloader) sessionConfig.preloader = options.preloader;
+
   const client = new TknClient({
     socketUrl: options.socketUrl,
     httpUrl: options.httpUrl,
+    sessionConfig:
+      Object.keys(sessionConfig).length > 0 ? sessionConfig : undefined,
     onConnect: () => {
       if (options.verbose) {
         console.log(`🔗 Connected to ${options.socketUrl}`);

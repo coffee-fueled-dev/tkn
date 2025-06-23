@@ -17,6 +17,22 @@ bun add @tkn/client
 
 ## Usage
 
+### Session Configuration
+
+Both clients now support optional session configuration to specify the key generator and preloader:
+
+```typescript
+import { TknClient } from "@tkn/client";
+
+const client = new TknClient({
+  socketUrl: "localhost:4001",
+  sessionConfig: {
+    keyGenerator: "fastHash", // Options: binaryKey, fnvHash, fastHash, simdHash
+    preloader: "tinyStories", // Options: none, tinyStories
+  },
+});
+```
+
 ### Browser Client
 
 ```typescript

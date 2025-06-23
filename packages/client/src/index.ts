@@ -4,11 +4,17 @@ export interface BatchItem {
   data: string; // Only strings now for maximum efficiency
 }
 
+export interface SessionConfig {
+  keyGenerator?: string;
+  preloader?: string;
+}
+
 export interface TknClientOptions {
   host?: string;
   port?: number;
   httpUrl?: string; // Full HTTP URL for replay
   socketUrl?: string; // Socket connection string (host:port)
+  sessionConfig?: SessionConfig; // Configuration for the session
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
@@ -40,6 +46,7 @@ export class TknClient {
       port: options.port || socketPort,
       httpUrl: options.httpUrl || defaultHttpUrl,
       socketUrl: socketUrl,
+      sessionConfig: options.sessionConfig || {},
       onConnect: options.onConnect || (() => {}),
       onDisconnect: options.onDisconnect || (() => {}),
       onError:
@@ -120,7 +127,10 @@ export class TknClient {
     try {
       const message = new TextDecoder().decode(data).trim();
 
-      if (message === "READY") {
+      if (message === "CONFIG_REQUIRED") {
+        // Server is requesting configuration
+        this.sendConfiguration();
+      } else if (message === "READY") {
         this.ready = true;
         if (this.readyResolve) {
           this.readyResolve();
@@ -130,6 +140,45 @@ export class TknClient {
       // Handle other server messages here if needed in the future
     } catch (error) {
       this.onError(new Error(`Failed to parse server message: ${error}`));
+    }
+  }
+
+  /**
+   * Send session configuration to the server
+   */
+  private sendConfiguration(): void {
+    if (!this.connected || !this.socket) {
+      return;
+    }
+
+    try {
+      const configMessage = `CONFIG:${JSON.stringify(
+        this.options.sessionConfig
+      )}`;
+      const messageData = new TextEncoder().encode(configMessage);
+
+      // Create properly framed message with 5-byte header
+      const messageType = 0; // Default message type
+      const messageLength = messageData.length;
+
+      // Create header buffer (5 bytes total)
+      const headerBuffer = new Uint8Array(5);
+      headerBuffer[0] = messageType;
+      headerBuffer[1] = (messageLength >>> 24) & 0xff;
+      headerBuffer[2] = (messageLength >>> 16) & 0xff;
+      headerBuffer[3] = (messageLength >>> 8) & 0xff;
+      headerBuffer[4] = messageLength & 0xff;
+
+      // Combine header and message data
+      const framedMessage = new Uint8Array(
+        headerBuffer.length + messageData.length
+      );
+      framedMessage.set(headerBuffer, 0);
+      framedMessage.set(messageData, headerBuffer.length);
+
+      this.socket.write(framedMessage);
+    } catch (error) {
+      this.onError(error as Error);
     }
   }
 
