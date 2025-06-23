@@ -1,23 +1,33 @@
-export const variables = {
-  MEMGRAPH_URI: process.env.MEMGRAPH_URI ?? "bolt://localhost:7687",
-  MEMGRAPH_USER: process.env.MEMGRAPH_USER ?? "memgraph",
-  MEMGRAPH_PASS: process.env.MEMGRAPH_PASS ?? "memgraph",
-  MEMGRAPH_DB_NAME: process.env.MEMGRAPH_DB_NAME ?? "memgraph",
-  TKN_PORT: process.env.TKN_PORT ? parseInt(process.env.TKN_PORT, 10) : 4000,
-  PORT: process.env.TKN_PORT ? parseInt(process.env.TKN_PORT, 10) : 4000,
+import { z } from "zod";
+import { lazilyValidate, buildDynamic } from "tkn-shared";
+import {
+  keyGenerators,
+  type KeyGeneratorName,
+} from "./socket-server/key-generators";
 
-  // Full connection URLs for clients
-  TKN_HTTP_URL:
-    process.env.TKN_HTTP_URL ??
-    `http://localhost:${
-      process.env.TKN_PORT ? parseInt(process.env.TKN_PORT, 10) : 4000
-    }`,
-  TKN_SOCKET_URL:
-    process.env.TKN_SOCKET_URL ??
-    `localhost:${
-      process.env.TKN_PORT ? parseInt(process.env.TKN_PORT, 10) + 1 : 4001
-    }`,
+// Dynamically extract the allowed key generator names from the actual object
+const keyGeneratorNames = Object.keys(keyGenerators) as [
+  KeyGeneratorName,
+  ...KeyGeneratorName[]
+];
 
-  NODE_ENV:
-    (process.env.NODE_ENV as "development" | "production") ?? "development",
-} as const;
+const environmentSchema = z.object({
+  REDIS_URI: z.string().default("redis://localhost:6379"),
+  TKN_PORT: z.number().default(4000),
+  PORT: z.number().default(4000),
+  TKN_HTTP_URL: z.string().default("http://localhost:4000"),
+  TKN_SOCKET_URL: z.string().default("localhost:4001"),
+  NODE_ENV: z.enum(["development", "production"]).default("development"),
+  BATCH_SIZE: z.number().default(1000),
+  ITEM_SIZE_THRESHOLD: z.number().default(1000),
+  BANK_SIZE: z.number().default(10000),
+  KEY_GENERATOR: z.enum(keyGeneratorNames).default("fastHash"),
+  MAX_WINDOW_SIZE: z.number().default(1024),
+  MESSAGE_HEADER_SIZE: z.number().default(5),
+  MESSAGE_BUFFER_SIZE: z.number().default(8192),
+});
+
+export const variables = lazilyValidate(
+  environmentSchema,
+  buildDynamic(environmentSchema)
+);

@@ -1,6 +1,12 @@
 # LLM context
 .llm-context
-tinystories_sample.txt
+
+# Corpora directory - ignore text corpus files but not requirements.txt
+corpora/**/*.txt
+!corpora/requirements.txt
+!corpora/*/requirements.txt
+
+# Tokenizers
 tokenizers
 
 # CLI test files are now tracked with Git LFS

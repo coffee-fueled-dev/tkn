@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const logger = pino({ name: "parse-message" });
+
 export function parseMessage(rawData: Uint8Array<ArrayBufferLike>): string[] {
   try {
     if (rawData instanceof Uint8Array) {
@@ -9,7 +13,7 @@ export function parseMessage(rawData: Uint8Array<ArrayBufferLike>): string[] {
       return parseDelimitedText(rawData);
     } else throw new Error("Invalid data type");
   } catch (err) {
-    console.error("Error parsing data to batch:", err);
+    logger.error({ error: err }, "Error parsing data to batch");
     return [];
   }
 }

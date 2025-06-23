@@ -1,5 +1,6 @@
-const HEADER_SIZE = 5;
-const BUFFER_SIZE = 8192;
+import { variables } from "../environment";
+
+const { MESSAGE_HEADER_SIZE, MESSAGE_BUFFER_SIZE } = variables;
 
 export interface Message {
   type: number;
@@ -75,8 +76,8 @@ export class MessageBuffer {
 }
 
 export function createMessageBuffer(
-  initialSize: number = BUFFER_SIZE,
-  headerSize: number = HEADER_SIZE
+  initialSize: number = MESSAGE_BUFFER_SIZE,
+  headerSize: number = MESSAGE_HEADER_SIZE
 ): MessageBuffer {
   return new MessageBuffer(initialSize, headerSize);
 }

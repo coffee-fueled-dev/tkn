@@ -1,18 +1,33 @@
 import { variables } from "../environment";
 import type { MessageBuffer } from "./message-buffer";
-import { TknMiner } from "./miner";
+import { LZST } from "./lzst";
+import { keyGenerators, type TokenCache } from "./key-generators";
 import { randomUUIDv7, type Socket } from "bun";
 import { createMessageBuffer } from "./message-buffer";
-import { memgraphDriver, MemgraphManager } from "./memgraph";
 import { parseMessage } from "./parse-message";
-// import { baseline } from "./symbol-table/baseline";
+import { preload } from "./preload";
 import { LRUCache } from "lru-cache";
+import { RedisPublisher, type Token } from "./redis-publisher";
+import pino from "pino";
+
+const logger = pino({ name: "socket-server" });
+
+const {
+  BATCH_SIZE,
+  ITEM_SIZE_THRESHOLD,
+  BANK_SIZE,
+  KEY_GENERATOR,
+  MAX_WINDOW_SIZE,
+} = variables;
+
+// Create a decoder instance for converting buffers to strings when needed
+const decoder = new TextDecoder("utf-8", { fatal: false });
 
 export type SocketData = {
   sessionId: string;
-  tknMiner: TknMiner;
-  tknBank: LRUCache<number, boolean>;
-  memgraphManager: MemgraphManager;
+  lzst: LZST;
+  tokenCache: TokenCache;
+  redisPublisher: RedisPublisher;
   messageBuffer: MessageBuffer;
   queue: string[];
   draining: boolean;
@@ -26,10 +41,6 @@ export type SocketData = {
     tokenizationTime: number;
   };
 };
-
-const BATCH_SIZE = 1000;
-const ITEM_SIZE_THRESHOLD = 1000;
-const BANK_SIZE = 10000;
 
 export const startSocketServer = () =>
   Bun.listen<SocketData>({
@@ -60,18 +71,22 @@ export const startSocketServer = () =>
       },
       async open(socket) {
         const sessionId = randomUUIDv7();
-        const tknBank = new LRUCache<number, boolean>({
+        const tokenCache: TokenCache = new LRUCache({
           max: BANK_SIZE,
         });
-        const tknMiner = new TknMiner(tknBank);
-        const memgraphManager = new MemgraphManager(sessionId, memgraphDriver);
+        const lzst = new LZST(
+          tokenCache,
+          MAX_WINDOW_SIZE,
+          keyGenerators[KEY_GENERATOR]
+        );
+        const redisPublisher = new RedisPublisher();
         const messageBuffer = createMessageBuffer();
 
         socket.data = {
           sessionId,
-          tknMiner,
-          tknBank,
-          memgraphManager,
+          lzst,
+          tokenCache,
+          redisPublisher,
           messageBuffer,
           drain: createDrain(socket),
           queue: [],
@@ -86,15 +101,22 @@ export const startSocketServer = () =>
           },
         };
 
-        console.info(`🔗 Session ${sessionId} connected`);
+        logger.info({ sessionId }, "Session connected");
 
         try {
-          // await baseline.bpe.tinyStoriesEnglish(socket.data.tknBank);
+          // Ensure Redis connection is established before processing
+          await socket.data.redisPublisher.getSubscriberCount();
+
+          await preload.bpe.tinyStoriesEnglish(
+            socket.data.tokenCache,
+            keyGenerators[KEY_GENERATOR]
+          );
+
           socket.write("READY");
         } catch (error) {
-          console.error(
-            `❌ Failed to preload symbol table for session ${sessionId}:`,
-            error
+          logger.error(
+            { sessionId, error },
+            "Failed to preload cache for session"
           );
 
           socket.write("READY");
@@ -103,40 +125,41 @@ export const startSocketServer = () =>
       async close(socket) {
         const { sessionId } = socket.data;
 
-        // Drain any remaining items in the queue before closing
         if (socket.data.queue.length > 0 && !socket.data.draining) {
-          console.log(
-            `Draining remaining ${socket.data.queue.length} items for session ${sessionId}...`
+          logger.info(
+            { sessionId, queueLength: socket.data.queue.length },
+            "Draining remaining items for session"
           );
           socket.data.drain(socket.data.queue);
         }
 
-        // Flush any remaining window content
-        const finalFlush = socket.data.tknMiner.flush();
+        const finalFlush = socket.data.lzst.flush();
         if (finalFlush.data) {
-          console.log(
-            `Flushed final token for session ${sessionId}:`,
-            finalFlush.data.value
+          const tokenString = decoder.decode(finalFlush.data.buffer);
+          logger.debug(
+            { sessionId, token: tokenString },
+            "Flushed final token for session"
           );
         }
 
         while (socket.data.draining || socket.data.queue.length > 0) {
-          console.log(
-            `Waiting for session ${sessionId} to finish processing queue (${socket.data.queue.length} items remaining)...`
+          logger.debug(
+            { sessionId, queueLength: socket.data.queue.length },
+            "Waiting for session to finish processing queue"
           );
-          await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms and check again
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         reportSessionPerformance(socket, sessionId);
 
-        socket.data.tknBank.clear();
+        socket.data.tokenCache.clear();
         socket.data.messageBuffer.clear();
-        socket.data.tknMiner.clear();
+        socket.data.lzst.clear();
 
-        console.info(`🔌 Session ${sessionId} disconnected`);
+        logger.info({ sessionId }, "Session disconnected");
       },
       error(err) {
-        console.error("❌ Socket error:", err);
+        logger.error({ error: err }, "Socket error");
       },
     },
   });
@@ -146,20 +169,17 @@ const createDrain = (socket: Socket<SocketData>) => (queue: string[]) => {
   const drainStartTime = performance.now();
   socket.data.performance.drainCallCount++;
 
-  // Time the batching operation
   const batchStartTime = performance.now();
   const inputBuffer = createBatch(socket, queue);
   const batchEndTime = performance.now();
   socket.data.performance.batchingTime += batchEndTime - batchStartTime;
 
   if (inputBuffer.length > 0) {
-    // Time the tokenization operation
     const tokenizationStartTime = performance.now();
-    const tokens = socket.data.tknMiner.processBuffer(inputBuffer);
+    const tokens = socket.data.lzst.processBuffer(inputBuffer);
 
-    // If this is the final drain (queue is now empty), flush remaining content
     const flushResult =
-      socket.data.queue.length === 0 ? socket.data.tknMiner.flush() : null;
+      socket.data.queue.length === 0 ? socket.data.lzst.flush() : null;
     if (flushResult?.data) {
       tokens.push(flushResult);
     }
@@ -168,12 +188,48 @@ const createDrain = (socket: Socket<SocketData>) => (queue: string[]) => {
     socket.data.performance.tokenizationTime +=
       tokenizationEndTime - tokenizationStartTime;
 
-    // Token processing (not timed as it's just iteration)
+    // Publish tokens to Redis for broker processing
+    const tokensToPublish: Token[] = [];
     for (const token of tokens) {
       if (token.data) {
-        // console.log(token.data.sessionIndex, token.data.value, token.data.buffer);
-        // socket.data.memgraphManager.enqueue(token.data);
+        const tokenString = decoder.decode(token.data.buffer);
+        logger.debug(
+          {
+            sessionId: socket.data.sessionId,
+            token: tokenString,
+            sessionIndex: token.data.sessionIndex,
+          },
+          "Processing token"
+        );
+        tokensToPublish.push({
+          buffer: token.data.buffer,
+          sessionIndex: token.data.sessionIndex,
+          sessionId: socket.data.sessionId,
+          tenantId: socket.data.sessionId, // Using sessionId as tenantId for now
+          timestamp: Date.now(),
+        });
       }
+    }
+
+    if (tokensToPublish.length > 0) {
+      // Fire and forget - don't block on Redis publishing
+      socket.data.redisPublisher
+        .publishBatch(tokensToPublish)
+        .then(() => {
+          logger.info(
+            {
+              sessionId: socket.data.sessionId,
+              tokensLength: tokensToPublish.length,
+            },
+            "Published tokens for session"
+          );
+        })
+        .catch((error) => {
+          logger.error(
+            { sessionId: socket.data.sessionId, error },
+            "Failed to publish tokens for session"
+          );
+        });
     }
   }
 
@@ -183,13 +239,10 @@ const createDrain = (socket: Socket<SocketData>) => (queue: string[]) => {
 };
 
 const createBatch = (socket: Socket<SocketData>, queue: string[]) => {
-  // Batch all strings into one buffer conversion
   const batchedInput = queue.join("");
-  // Single buffer conversion for the entire batch
   const inputBuffer = Buffer.from(batchedInput, "utf-8");
-  queue.length = 0; // Clear the queue efficiently
+  queue.length = 0;
 
-  // Track bytes processed
   socket.data.performance.totalBytesProcessed += Buffer.byteLength(
     batchedInput,
     "utf8"
@@ -202,7 +255,6 @@ const reportSessionPerformance = (
   socket: Socket<SocketData>,
   sessionId: string
 ) => {
-  // Calculate and report performance metrics
   const endTime = performance.now();
   const totalSessionDuration = endTime - socket.data.performance.startTime;
   const totalBytes = socket.data.performance.totalBytesProcessed;
@@ -216,7 +268,6 @@ const reportSessionPerformance = (
     const bytesPerSecond = bytesPerMs * 1000;
     const mbPerSecond = bytesPerSecond / (1024 * 1024);
 
-    // Pure tokenization performance
     const tokenizationBytesPerMs =
       tokenizationTime > 0 ? totalBytes / tokenizationTime : 0;
     const tokenizationBytesPerSecond = tokenizationBytesPerMs * 1000;
@@ -229,48 +280,77 @@ const reportSessionPerformance = (
       (totalProcessingTime / totalSessionDuration) * 100;
     const batchingOverhead = (batchingTime / totalProcessingTime) * 100;
 
-    console.info(`📊 Performance Summary for Session ${sessionId}:`);
-    console.info(
-      `   Total bytes processed: ${totalBytes.toLocaleString()} bytes`
+    logger.info({ sessionId }, "📊 Performance Summary for Session");
+    logger.info(
+      { sessionId, totalBytesProcessed: totalBytes.toLocaleString() },
+      "   Total bytes processed"
     );
-    console.info(
-      `   Total session duration: ${totalSessionDuration.toFixed(2)} ms`
+    logger.info(
+      { sessionId, totalSessionDuration: totalSessionDuration.toFixed(2) },
+      "   Total session duration"
     );
-    console.info(
-      `   Total processing time: ${totalProcessingTime.toFixed(2)} ms`
+    logger.info(
+      { sessionId, totalProcessingTime: totalProcessingTime.toFixed(2) },
+      "   Total processing time"
     );
-    console.info(
-      `   - Batching time: ${batchingTime.toFixed(
-        2
-      )} ms (${batchingOverhead.toFixed(1)}%)`
+    logger.info(
+      { sessionId, batchingTime: batchingTime.toFixed(2) },
+      "   - Batching time"
     );
-    console.info(`   - Tokenization time: ${tokenizationTime.toFixed(2)} ms`);
-    console.info(
-      `   Processing efficiency: ${processingEfficiency.toFixed(
-        1
-      )}% (processing vs session time)`
+    logger.info(
+      { sessionId, batchingOverhead: batchingOverhead.toFixed(1) },
+      "   - Batching overhead"
     );
-    console.info(`   Drain function calls: ${drainCallCount}`);
-    console.info(
-      `   Avg time per call: ${avgProcessingTimePerCall.toFixed(
-        2
-      )} ms (${avgBatchingTimePerCall.toFixed(
-        2
-      )}ms batch + ${avgTokenizationTimePerCall.toFixed(2)}ms tokenization)`
+    logger.info(
+      { sessionId, tokenizationTime: tokenizationTime.toFixed(2) },
+      "   - Tokenization time"
     );
-    console.info(
-      `   Overall processing rate: ${bytesPerMs.toFixed(
-        2
-      )} bytes/ms (${mbPerSecond.toFixed(2)} MB/sec)`
+    logger.info(
+      { sessionId, processingEfficiency: processingEfficiency.toFixed(1) },
+      "   Processing efficiency"
     );
-    console.info(
-      `   Pure tokenization rate: ${tokenizationBytesPerMs.toFixed(
-        2
-      )} bytes/ms (${tokenizationMbPerSecond.toFixed(2)} MB/sec)`
+    logger.info({ sessionId, drainCallCount }, "   Drain function calls");
+    logger.info(
+      {
+        sessionId,
+        avgProcessingTimePerCall: avgProcessingTimePerCall.toFixed(2),
+      },
+      "   Avg time per call"
+    );
+    logger.info(
+      { sessionId, avgBatchingTimePerCall: avgBatchingTimePerCall.toFixed(2) },
+      "   Avg batching time per call"
+    );
+    logger.info(
+      {
+        sessionId,
+        avgTokenizationTimePerCall: avgTokenizationTimePerCall.toFixed(2),
+      },
+      "   Avg tokenization time per call"
+    );
+    logger.info(
+      { sessionId, overallProcessingRate: bytesPerMs.toFixed(2) },
+      "   Overall processing rate"
+    );
+    logger.info(
+      { sessionId, mbPerSecond: mbPerSecond.toFixed(2) },
+      "   Overall processing rate"
+    );
+    logger.info(
+      { sessionId, pureTokenizationRate: tokenizationBytesPerMs.toFixed(2) },
+      "   Pure tokenization rate"
+    );
+    logger.info(
+      {
+        sessionId,
+        tokenizationMbPerSecond: tokenizationMbPerSecond.toFixed(2),
+      },
+      "   Pure tokenization rate"
     );
   } else {
-    console.info(
-      `📊 Performance Summary for Session ${sessionId}: No processing time recorded`
+    logger.info(
+      { sessionId },
+      "📊 Performance Summary for Session No processing time recorded"
     );
   }
 };

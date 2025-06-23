@@ -1,19 +1,20 @@
 import { startHttpServer } from "./http-server";
 import { startSocketServer } from "./socket-server";
-import { memgraphDriver } from "./socket-server/memgraph";
+import pino from "pino";
+
+const logger = pino({ name: "server" });
 
 const { shutdown } = (() => {
   const httpServer = startHttpServer();
   const socketServer = startSocketServer();
 
-  console.info(`TKN socket server listening on port ${socketServer.port}`);
-  console.info(`Health check: http://localhost:${httpServer.port}/health`);
+  logger.info(`TKN socket server listening on port ${socketServer.port}`);
+  logger.info(`Health check: http://localhost:${httpServer.port}/health`);
 
   const shutdown = () => {
-    console.info("Shutting down TKN server...");
+    logger.info("Shutting down TKN server...");
     httpServer.stop(true);
     socketServer.stop(true);
-    memgraphDriver.close();
     console.info("Server shutdown complete");
   };
 
