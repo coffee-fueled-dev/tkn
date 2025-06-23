@@ -1,4 +1,15 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: tkn-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tkn-network
+    restart: unless-stopped
+
   memgraph:
     image: memgraph/memgraph-mage
     container_name: tkn-memgraph
@@ -27,10 +38,38 @@ services:
       - tkn-network
     restart: unless-stopped
 
+  memgraph-broker:
+    build:
+      context: .
+      dockerfile: ./packages/memgraph-broker/Dockerfile
+    container_name: tkn-memgraph-broker
+    ports:
+      - "4002:4002"    # Broker HTTP port
+    environment:
+      - NODE_ENV=production
+      - PORT=4002
+      - REDIS_URI=redis://redis:6379
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_USER=memgraph
+      - MEMGRAPH_PASS=memgraph
+      - BATCH_SIZE=100
+      - BATCH_TIMEOUT_MS=5000
+    depends_on:
+      - redis
+      - memgraph
+    networks:
+      - tkn-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   tkn-server:
     build:
-      context: ./packages/server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./packages/server/Dockerfile
     container_name: tkn-server
     ports:
       - "4000:4000"    # TKN Server HTTP port
@@ -38,24 +77,29 @@ services:
     environment:
       - NODE_ENV=production
       - TKN_PORT=4000
+      - REDIS_URI=redis://redis:6379
       - MEMGRAPH_URI=bolt://memgraph:7687
       - MEMGRAPH_DB_NAME=memgraph
+      - BATCH_SIZE=1000
+      - ITEM_SIZE_THRESHOLD=1000
+      - BANK_SIZE=10000
+      - KEY_GENERATOR=fastHash
+      - MAX_WINDOW_SIZE=1024
     depends_on:
+      - redis
       - memgraph
+      - memgraph-broker
     networks:
       - tkn-network
     restart: unless-stopped
-    volumes:
-      - ./packages/server/src:/app/src:ro
-      - ./tokenizers:/app/tokenizers:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-
 volumes:
+  redis_data:
   memgraph_data:
 
 networks:
