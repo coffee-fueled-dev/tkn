@@ -1,0 +1,91 @@
+import type { Socket } from "bun";
+import type { SocketData } from "..";
+import pino from "pino";
+import { keyGenerators, type KeyGeneratorName } from "../key-generators";
+import { preloaders, type PreloaderName } from "../token-cache/preloaders";
+import { LZST } from "../lzst";
+import { variables } from "../../environment";
+import { TokenCache } from "../token-cache";
+
+const logger = pino({ name: "socket-server-on-data" });
+
+const { MAX_WINDOW_SIZE, BANK_SIZE } = variables;
+
+export interface SessionConfig {
+  keyGenerator?: string;
+  preloader?: string;
+}
+
+export const handleConfigMessage = async (
+  socket: Socket<SocketData>,
+  config: SessionConfig
+) => {
+  const { sessionId } = socket.data;
+
+  logger.info({ sessionId, config }, "Received session configuration");
+
+  // Validate and set key generator
+  if (config.keyGenerator && config.keyGenerator in keyGenerators) {
+    socket.data.keyGeneratorName = config.keyGenerator as KeyGeneratorName;
+  }
+
+  // Validate and set preloader
+  if (config.preloader && config.preloader in preloaders) {
+    socket.data.preloaderName = config.preloader as PreloaderName;
+  }
+
+  // Initialize session with selected configuration
+  await initializeSession(socket);
+};
+
+export const initializeSession = async (socket: Socket<SocketData>) => {
+  const { sessionId, keyGeneratorName, preloaderName } = socket.data;
+
+  try {
+    // Create LZST with selected key generator
+    const selectedKeyGenerator = keyGenerators[keyGeneratorName];
+    const tokenCache = new TokenCache(
+      BANK_SIZE,
+      keyGenerators[keyGeneratorName]
+    );
+    await tokenCache.preload(preloaders[preloaderName]);
+    socket.data.tokenCache = tokenCache;
+    socket.data.lzst = new LZST(tokenCache, MAX_WINDOW_SIZE);
+
+    // Ensure Redis connection is established before processing
+    await socket.data.redisPublisher.getSubscriberCount();
+
+    // Run selected preloader
+    const selectedPreloader = preloaders[preloaderName];
+    const preloadedCount = await selectedPreloader(
+      socket.data.tokenCache,
+      selectedKeyGenerator
+    );
+
+    socket.data.configured = true;
+
+    logger.info(
+      {
+        sessionId,
+        keyGenerator: keyGeneratorName,
+        preloader: preloaderName,
+        preloadedTokens: preloadedCount,
+      },
+      "Session configured and ready"
+    );
+
+    socket.write("READY");
+  } catch (error) {
+    logger.warn(
+      {
+        sessionId,
+        error,
+        keyGenerator: keyGeneratorName,
+        preloader: preloaderName,
+      },
+      "Failed to initialize session with configuration"
+    );
+
+    socket.write("READY");
+  }
+};
