@@ -1,0 +1,19 @@
+{
+  "name": "tkn-research-word-segmentation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "fast-glob": "^3.3.2",
+    "mathjs": "^14.5.2",
+    "pino": "^9.7.0",
+    "tkn-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

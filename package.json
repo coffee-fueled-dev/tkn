@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "corpora/*",
+    "research/*"
   ],
   "scripts": {
     "context": "bun scripts/collect-context.ts",
@@ -18,6 +20,11 @@
     "corpus:bpe": "cd corpora && python3 bpe.py",
     "corpus:download-tinystories": "cd corpora/tiny-stories-samples && python3 download_stories.py",
     "corpus:send": "bun scripts/corpus-send.ts",
+    "corpus:prepare-brown": "cd corpora/brown-corpus && python3 prepare_brown_corpus.py",
+    "research:evaluate-single": "bun scripts/evaluate-segmentation.ts single",
+    "research:evaluate-sweep": "bun scripts/evaluate-segmentation.ts sweep",
+    "research:analyze": "bun scripts/analyze-segmentation.ts",
+    "research:list-sessions": "bun scripts/analyze-segmentation.ts --list",
     "install:all": "bun install",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
     "docker:up": "docker-compose up -d",
