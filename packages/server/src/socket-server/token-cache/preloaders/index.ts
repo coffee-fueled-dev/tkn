@@ -1,20 +1,20 @@
-import type { KeyGenerator } from "../../key-generators";
 import type { TokenCache } from "..";
-import { tinyStories } from "./tiny-stories";
+import pino from "pino";
 
-export type Preloader = (
-  cache: TokenCache,
-  keyGenerator: KeyGenerator
-) => Promise<number>;
+const logger = pino({ name: "preloader" });
 
-export type PreloaderName = keyof typeof preloaders;
+export class Preloader {
+  constructor(private cache: TokenCache) {}
 
-// No-op preloader for clients who don't want preloading
-const none: Preloader = async () => {
-  return 0;
-};
+  async load(data: Uint8Array[]): Promise<number> {
+    let preloadedCount = 0;
 
-export const preloaders = {
-  none,
-  tinyStories,
-} as const;
+    for (const bytes of data) {
+      this.cache.add(bytes);
+      preloadedCount++;
+    }
+
+    logger.info({ preloadedCount }, "Preloaded tokens into cache");
+    return preloadedCount;
+  }
+}
