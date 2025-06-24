@@ -7,7 +7,7 @@ WITH obsRel.session_index as idx
 
 MATCH (sourceToken:Token)-[thisObs:OBSERVED {session_index: idx}]->(session:Session)
 
-MATCH (otherToken:Token)-[otherObs:OBSERVED]->(s)
+MATCH (otherToken:Token)-[otherObs:OBSERVED]->(session)
 WHERE otherObs.session_index = idx + 1 OR otherObs.session_index = idx - 1
 
 WITH sourceToken, otherToken, thisObs, otherObs, session
