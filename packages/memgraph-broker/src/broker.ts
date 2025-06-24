@@ -133,11 +133,6 @@ export class Broker {
     }
   }
 
-  // Legacy method for backward compatibility
-  flushBatch() {
-    this.flushAllBins();
-  }
-
   getSessionId() {
     return this.sessionId;
   }
