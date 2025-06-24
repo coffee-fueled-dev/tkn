@@ -40,14 +40,20 @@ export type LZSTResult =
  * 2. A long term global memory implemented as a directed property graph of all observed subsequences
  */
 export class LZST {
-  private cache: TokenCache;
+  private highConfidenceCache: TokenCache;
+  private lowConfidenceCache: TokenCache;
   private windowBuffer: Uint8Array;
   private windowSize: number = 0;
   private maxWindowSize: number;
   private sessionIndex: number = 0;
 
-  constructor(cache: TokenCache, maxWindowSize: number = 1024) {
-    this.cache = cache;
+  constructor(
+    highConfidenceCache: TokenCache,
+    lowConfidenceCache: TokenCache,
+    maxWindowSize: number = 1024
+  ) {
+    this.highConfidenceCache = highConfidenceCache;
+    this.lowConfidenceCache = lowConfidenceCache;
     this.maxWindowSize = maxWindowSize;
     this.windowBuffer = new Uint8Array(maxWindowSize);
   }
@@ -68,11 +74,14 @@ export class LZST {
       }
 
       const currentWindow = this.windowBuffer.subarray(0, this.windowSize);
-      if (this.cache.contains(currentWindow)) {
+      if (
+        this.highConfidenceCache.contains(currentWindow) ||
+        this.lowConfidenceCache.contains(currentWindow)
+      ) {
         /*
          * This is the progression block -- the next step will grow this window by one byte
          */
-        this.cache.add(currentWindow);
+        this.highConfidenceCache.add(currentWindow);
         return { error: null, data: null };
       }
 
@@ -94,8 +103,8 @@ export class LZST {
           this.windowSize - 1
         );
 
-        this.cache.add(previousWindow);
-        this.cache.add(currentWindow);
+        this.highConfidenceCache.add(previousWindow);
+        this.lowConfidenceCache.add(currentWindow);
 
         try {
           token = this.constructToken(previousWindow);
@@ -118,7 +127,7 @@ export class LZST {
          */
         const currentWindow = this.windowBuffer.subarray(0, this.windowSize);
         token = this.constructToken(currentWindow);
-        this.cache.add(currentWindow);
+        this.lowConfidenceCache.add(currentWindow);
 
         this.windowSize = 0;
 
@@ -160,7 +169,7 @@ export class LZST {
   flush(): LZSTResult {
     if (this.windowSize > 0) {
       const finalWindow = this.windowBuffer.subarray(0, this.windowSize);
-      this.cache.add(finalWindow);
+      this.lowConfidenceCache.add(finalWindow);
 
       try {
         const token = this.constructToken(finalWindow);
@@ -180,7 +189,6 @@ export class LZST {
    * Clear the miner state
    */
   clear(): void {
-    this.cache.clear();
     this.windowSize = 0;
     this.windowBuffer = new Uint8Array(this.maxWindowSize);
     this.sessionIndex = 0;

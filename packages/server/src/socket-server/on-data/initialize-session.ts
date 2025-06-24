@@ -2,7 +2,6 @@ import type { Socket } from "bun";
 import type { SocketData } from "..";
 import pino from "pino";
 import { keyGenerators, type KeyGeneratorName } from "../key-generators";
-import { preloaders, type PreloaderName } from "../token-cache/preloaders";
 import { LZST } from "../lzst";
 import { variables } from "../../environment";
 import { TokenCache } from "../token-cache";
@@ -29,17 +28,12 @@ export const handleConfigMessage = async (
     socket.data.keyGeneratorName = config.keyGenerator as KeyGeneratorName;
   }
 
-  // Validate and set preloader
-  if (config.preloader && config.preloader in preloaders) {
-    socket.data.preloaderName = config.preloader as PreloaderName;
-  }
-
   // Initialize session with selected configuration
   await initializeSession(socket);
 };
 
 export const initializeSession = async (socket: Socket<SocketData>) => {
-  const { sessionId, keyGeneratorName, preloaderName } = socket.data;
+  const { sessionId, keyGeneratorName } = socket.data;
 
   try {
     // Create LZST with selected key generator
@@ -48,19 +42,11 @@ export const initializeSession = async (socket: Socket<SocketData>) => {
       BANK_SIZE,
       keyGenerators[keyGeneratorName]
     );
-    await tokenCache.preload(preloaders[preloaderName]);
     socket.data.tokenCache = tokenCache;
     socket.data.lzst = new LZST(tokenCache, MAX_WINDOW_SIZE);
 
     // Ensure Redis connection is established before processing
     await socket.data.redisPublisher.getSubscriberCount();
-
-    // Run selected preloader
-    const selectedPreloader = preloaders[preloaderName];
-    const preloadedCount = await selectedPreloader(
-      socket.data.tokenCache,
-      selectedKeyGenerator
-    );
 
     socket.data.configured = true;
 
@@ -68,8 +54,6 @@ export const initializeSession = async (socket: Socket<SocketData>) => {
       {
         sessionId,
         keyGenerator: keyGeneratorName,
-        preloader: preloaderName,
-        preloadedTokens: preloadedCount,
       },
       "Session configured and ready"
     );
@@ -81,7 +65,6 @@ export const initializeSession = async (socket: Socket<SocketData>) => {
         sessionId,
         error,
         keyGenerator: keyGeneratorName,
-        preloader: preloaderName,
       },
       "Failed to initialize session with configuration"
     );

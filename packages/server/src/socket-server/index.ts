@@ -2,7 +2,6 @@ import { variables } from "../environment";
 import type { MessageBuffer } from "./message-buffer";
 import { LZST } from "./lzst";
 import { type KeyGeneratorName } from "./key-generators";
-import { type PreloaderName } from "./token-cache/preloaders";
 import { RedisPublisher } from "./redis-publisher";
 import pino from "pino";
 import { TokenCache } from "./token-cache";
@@ -23,7 +22,6 @@ export type SocketData = {
   drain: (queue: string[]) => void;
   configured: boolean; // Track if session is configured
   keyGeneratorName: KeyGeneratorName;
-  preloaderName: PreloaderName;
   performance: {
     startTime: number;
     totalBytesProcessed: number;

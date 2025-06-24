@@ -26,7 +26,6 @@ export async function onOpen(socket: Socket<SocketData>) {
     draining: false,
     configured: false,
     keyGeneratorName: "fastHash",
-    preloaderName: "none",
     performance: {
       startTime: performance.now(),
       totalBytesProcessed: 0,

@@ -1,6 +1,6 @@
 import { LRUCache } from "lru-cache";
 import { type KeyGenerator, type LookupKey } from "../key-generators";
-import type { Preloader } from "./preloaders";
+import { Preloader } from "./preloaders";
 import pino from "pino";
 
 const logger = pino({ name: "token-cache" });
@@ -13,8 +13,8 @@ export class TokenCache extends LRUCache<LookupKey, Uint8Array> {
     this.keyGenerator = keyGenerator;
   }
 
-  async preload(preloader: Preloader) {
-    await preloader(this, this.keyGenerator);
+  async preload(preloader: Preloader, data: Uint8Array[]) {
+    await preloader.load(data);
   }
 
   add(prefix: Uint8Array) {
