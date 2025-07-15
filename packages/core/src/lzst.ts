@@ -1,6 +1,13 @@
 import { LRUCache } from "lru-cache";
 import type { KeyGenerator } from "./key-generators";
 
+/**
+ * Lempel-Ziv Stream Tokenizer (LZST) is a lossless data compression algorithm that uses a dictionary of
+ * previously seen sequences to compress data.
+ *
+ * It is a variant of the LZ77 algorithm that uses a dictionary of previously
+ * seen sequences to compress data.
+ */
 export class LZST {
   private candidate: Uint8Array | null = null;
   readonly memory: LRUCache<number, boolean>;
