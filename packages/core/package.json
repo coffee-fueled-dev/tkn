@@ -7,10 +7,6 @@
   },
   "scripts": {},
   "dependencies": {
-    "lru-cache": "^10.1.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.0.0"
+    "lru-cache": "^11.0.2"
   }
 }

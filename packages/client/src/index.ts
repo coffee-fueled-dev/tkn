@@ -1,7 +1,7 @@
 import type { TCPSocket } from "bun";
 
 export interface BatchItem {
-  data: string; // Only strings now for maximum efficiency
+  data: string;
 }
 
 export interface SessionConfig {
@@ -12,9 +12,8 @@ export interface SessionConfig {
 export interface TknClientOptions {
   host?: string;
   port?: number;
-  httpUrl?: string; // Full HTTP URL for replay
-  socketUrl?: string; // Socket connection string (host:port)
-  sessionConfig?: SessionConfig; // Configuration for the session
+  socketUrl?: string;
+  sessionConfig?: SessionConfig;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
@@ -24,7 +23,7 @@ export class TknClient {
   private socket: TCPSocket | null = null;
   private options: Required<TknClientOptions>;
   private connected = false;
-  private ready = false; // New: tracks if server is ready
+  private ready = false;
   private onConnect: () => void;
   private onDisconnect: () => void;
   private onError: (error: Error) => void;
@@ -32,19 +31,13 @@ export class TknClient {
   private readyResolve: (() => void) | null = null;
 
   constructor(options: TknClientOptions = {}) {
-    // Parse socket URL from environment or construct from host/port
-    const defaultSocketUrl = process.env.TKN_SOCKET_URL || "localhost:4001";
-    const defaultHttpUrl = process.env.TKN_HTTP_URL || "http://localhost:4000";
-
-    // If socketUrl is provided, parse host and port from it
-    const socketUrl = options.socketUrl || defaultSocketUrl;
+    const socketUrl = options.socketUrl || "localhost:4001";
     const [socketHost, socketPortStr] = socketUrl.split(":");
     const socketPort = parseInt(socketPortStr, 10);
 
     this.options = {
       host: options.host || socketHost,
       port: options.port || socketPort,
-      httpUrl: options.httpUrl || defaultHttpUrl,
       socketUrl: socketUrl,
       sessionConfig: options.sessionConfig || {},
       onConnect: options.onConnect || (() => {}),
@@ -309,27 +302,6 @@ export class TknClient {
       connected: this.connected,
       ready: this.ready,
     };
-  }
-
-  async replay(sessionId: string): Promise<string[]> {
-    const url = `${this.options.httpUrl}/replay/${sessionId}`;
-
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        const errorBody = await response
-          .json()
-          .catch(() => ({ error: "Unknown error during replay" }));
-        throw new Error(
-          `Replay failed with status ${response.status}: ${errorBody.error}`
-        );
-      }
-      const data = await response.json();
-      return data as string[];
-    } catch (error) {
-      this.onError(error as Error);
-      throw error;
-    }
   }
 }
 

@@ -9,7 +9,7 @@
     "research/*"
   ],
   "scripts": {
-    "context": "bun scripts/collect-context.ts",
+    "context": "bun scripts/context.ts",
     "build": "bun --filter='*' run build",
     "dev:server": "bun --filter=tkn-server run dev",
     "dev:client": "bun --filter=tkn-client run dev",

@@ -10,11 +10,7 @@
   },
   "devDependencies": {
     "@parcel/watcher": "^2.5.1",
-    "@types/bun": "latest",
     "pino-pretty": "^13.0.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
   },
   "dependencies": {
     "ioredis": "^5.4.1",
