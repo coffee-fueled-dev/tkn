@@ -1,9 +1,8 @@
-import { LZST } from "../lzst";
+import { LZST } from "@tkn/core";
 import { randomUUIDv7, type Socket } from "bun";
 import { createMessageBuffer } from "../message-buffer";
 import { RedisPublisher } from "../redis-publisher";
 import pino from "pino";
-import { TokenCache } from "../token-cache";
 import type { SocketData } from "..";
 import { createDrain } from "./create-drain";
 import { initializeSession } from "../on-data/initialize-session";
@@ -17,15 +16,13 @@ export async function onOpen(socket: Socket<SocketData>) {
 
   socket.data = {
     sessionId,
-    lzst: null as unknown as LZST, // Will be initialized after configuration
-    tokenCache: null as unknown as TokenCache,
+    lzst: null as unknown as LZST,
     redisPublisher,
     messageBuffer,
     drain: createDrain(socket),
     queue: [],
     draining: false,
     configured: false,
-    keyGeneratorName: "fastHash",
     performance: {
       startTime: performance.now(),
       totalBytesProcessed: 0,

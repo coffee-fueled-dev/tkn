@@ -21,7 +21,6 @@ export function onData(socket: Socket<SocketData>, data: Uint8Array) {
       continue;
     }
 
-    // Only process data messages if session is configured
     if (!socket.data.configured) {
       logger.warn(
         { sessionId: socket.data.sessionId },

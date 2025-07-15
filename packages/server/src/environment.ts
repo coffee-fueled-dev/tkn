@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { lazilyValidate, buildDynamic } from "tkn-shared";
-import {
-  keyGenerators,
-  type KeyGeneratorName,
-} from "./socket-server/key-generators";
+import { keyGenerators, type KeyGeneratorName } from "@tkn/core";
 
 // Dynamically extract the allowed key generator names from the actual object
 const keyGeneratorNames = Object.keys(keyGenerators) as [

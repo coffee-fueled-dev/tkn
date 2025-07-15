@@ -19,8 +19,8 @@ export async function onClose(socket: Socket<SocketData>) {
   }
 
   const finalFlush = socket.data.lzst.flush();
-  if (finalFlush.data) {
-    const tokenString = decoder.decode(finalFlush.data.buffer);
+  if (finalFlush.current) {
+    const tokenString = decoder.decode(finalFlush.current);
     logger.debug(
       { sessionId, token: tokenString },
       "Flushed final token for session"
@@ -37,7 +37,6 @@ export async function onClose(socket: Socket<SocketData>) {
 
   reportSessionPerformance(socket, sessionId);
 
-  socket.data.tokenCache.clear();
   socket.data.messageBuffer.clear();
   socket.data.lzst.clear();
 

@@ -1,10 +1,8 @@
 import type { Socket } from "bun";
 import type { SocketData } from "..";
 import pino from "pino";
-import { keyGenerators, type KeyGeneratorName } from "../key-generators";
-import { LZST } from "../lzst";
+import { keyGenerators, type KeyGeneratorName, LZST } from "@tkn/core";
 import { variables } from "../../environment";
-import { TokenCache } from "../token-cache";
 
 const logger = pino({ name: "socket-server-on-data" });
 
@@ -23,27 +21,17 @@ export const handleConfigMessage = async (
 
   logger.info({ sessionId, config }, "Received session configuration");
 
-  // Validate and set key generator
-  if (config.keyGenerator && config.keyGenerator in keyGenerators) {
-    socket.data.keyGeneratorName = config.keyGenerator as KeyGeneratorName;
-  }
-
-  // Initialize session with selected configuration
   await initializeSession(socket);
 };
 
 export const initializeSession = async (socket: Socket<SocketData>) => {
-  const { sessionId, keyGeneratorName } = socket.data;
+  const { sessionId } = socket.data;
 
   try {
-    // Create LZST with selected key generator
-    const selectedKeyGenerator = keyGenerators[keyGeneratorName];
-    const tokenCache = new TokenCache(
-      BANK_SIZE,
-      keyGenerators[keyGeneratorName]
-    );
-    socket.data.tokenCache = tokenCache;
-    socket.data.lzst = new LZST(tokenCache, MAX_WINDOW_SIZE);
+    socket.data.lzst = new LZST({
+      memorySize: BANK_SIZE,
+      keyGenerator: keyGenerators.fastHash,
+    });
 
     // Ensure Redis connection is established before processing
     await socket.data.redisPublisher.getSubscriberCount();
@@ -53,7 +41,6 @@ export const initializeSession = async (socket: Socket<SocketData>) => {
     logger.info(
       {
         sessionId,
-        keyGenerator: keyGeneratorName,
       },
       "Session configured and ready"
     );
@@ -64,7 +51,6 @@ export const initializeSession = async (socket: Socket<SocketData>) => {
       {
         sessionId,
         error,
-        keyGenerator: keyGeneratorName,
       },
       "Failed to initialize session with configuration"
     );

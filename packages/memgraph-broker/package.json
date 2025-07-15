@@ -1,5 +1,5 @@
 {
-  "name": "tkn-memgraph-broker",
+  "name": "@tkn/memgraph-broker",
   "version": "1.0.0",
   "module": "src/index.ts",
   "type": "module",

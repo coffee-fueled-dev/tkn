@@ -22,7 +22,7 @@ class GitignoreFilter {
   private negativePatterns: string[] = [];
 
   constructor(gitignoreContent: string) {
-    const parsed = parse(gitignoreContent) as GitignorePatterns;
+    const parsed = parse(gitignoreContent) as unknown as GitignorePatterns;
 
     // Process patterns to handle gitignore semantics
     for (const pattern of parsed.patterns) {

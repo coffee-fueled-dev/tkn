@@ -1,5 +1,5 @@
 {
-  "name": "tkn-server",
+  "name": "@tkn/server",
   "version": "1.0.0",
   "module": "src/index.ts",
   "type": "module",
@@ -25,6 +25,7 @@
     "neo4j-driver": "^5.28.1",
     "pino": "^9.7.0",
     "tkn-shared": "workspace:*",
-    "zod": "^3.25.64"
+    "zod": "^3.25.64",
+    "@tkn/core": "workspace:*"
   }
 }

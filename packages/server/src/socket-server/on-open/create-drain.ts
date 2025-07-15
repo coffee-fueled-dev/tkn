@@ -20,12 +20,21 @@ export const createDrain =
 
     if (inputBuffer.length > 0) {
       const tokenizationStartTime = performance.now();
-      const tokens = socket.data.lzst.processBuffer(inputBuffer);
+      const tokens: Uint8Array[] = [];
 
+      // Process each byte individually with the new API
+      for (const byte of inputBuffer) {
+        const token = socket.data.lzst.processByte(byte);
+        if (token) {
+          tokens.push(token);
+        }
+      }
+
+      // Handle flush if queue is empty
       const flushResult =
         socket.data.queue.length === 0 ? socket.data.lzst.flush() : null;
-      if (flushResult?.data) {
-        tokens.push(flushResult);
+      if (flushResult?.current) {
+        tokens.push(flushResult.current);
       }
 
       const tokenizationEndTime = performance.now();
@@ -34,24 +43,23 @@ export const createDrain =
 
       // Publish tokens to Redis for broker processing
       const tokensToPublish: Token[] = [];
-      for (const token of tokens) {
-        if (token.data) {
-          logger.debug(
-            {
-              sessionId: socket.data.sessionId,
-              token: decoder.decode(token.data.buffer),
-              sessionIndex: token.data.sessionIndex,
-            },
-            "Processing token"
-          );
-          tokensToPublish.push({
-            buffer: token.data.buffer,
-            sessionIndex: token.data.sessionIndex,
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        logger.debug(
+          {
             sessionId: socket.data.sessionId,
-            tenantId: socket.data.sessionId, // Using sessionId as tenantId for now
-            timestamp: Date.now(),
-          });
-        }
+            token: decoder.decode(token),
+            sessionIndex: i,
+          },
+          "Processing token"
+        );
+        tokensToPublish.push({
+          buffer: token,
+          sessionIndex: i,
+          sessionId: socket.data.sessionId,
+          tenantId: socket.data.sessionId, // Using sessionId as tenantId for now
+          timestamp: Date.now(),
+        });
       }
 
       if (tokensToPublish.length > 0) {

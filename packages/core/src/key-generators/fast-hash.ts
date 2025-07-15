@@ -1,15 +1,16 @@
 import type { KeyGenerator } from ".";
 
 /**
- * Ultra-fast deterministic hash optimized for short sequences
+ * Fast deterministic hash optimized for short sequences
  * Uses a simplified polynomial hash with minimal operations
  */
-export const fastHash: KeyGenerator = (buffer, length) => {
+export const fastHash: KeyGenerator = (buffer) => {
+  const length = buffer.length;
   if (length === 0) return 0;
 
   let hash = 0x811c9dc5; // FNV offset basis for consistency
 
-  // Unrolled loop for common small sizes (1-8 bytes)
+  // Unrolled loop for common small sizes (1-4 bytes)
   switch (length) {
     case 1:
       return (hash ^ buffer[0]) >>> 0;
