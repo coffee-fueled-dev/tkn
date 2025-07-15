@@ -1,3 +1,18 @@
+# LLM context
+.llm-context
+
+# Corpora directory - ignore text corpus files but not requirements.txt
+corpora/**/*.txt
+!corpora/requirements.txt
+!corpora/*/requirements.txt
+
+# Tokenizers
+tokenizers
+
+# CLI test files are now tracked with Git LFS
+# test-files (removed - now using Git LFS)
+
+
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
 client/examples/test_files/*

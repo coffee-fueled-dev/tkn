@@ -1,0 +1,22 @@
+[install]
+# Enable workspace support
+peer = true
+exact = false
+
+[install.scopes]
+# Configure workspace dependencies
+"@tkn" = { "url" = "packages/*" }
+
+[run]
+# Enable filtering for run commands
+filter = true
+
+[build]
+# Default build settings for the workspace
+target = "node"
+format = "esm"
+sourcemap = "external"
+
+[test]
+# Test configuration
+timeout = 30000 

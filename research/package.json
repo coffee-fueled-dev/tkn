@@ -1,0 +1,17 @@
+{
+  "name": "@tkn/research",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "mathjs": "^14.5.2",
+    "@tkn/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

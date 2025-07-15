@@ -1,0 +1,77 @@
+sequenceDiagram
+    participant Client
+    participant Server as TKN Server
+    participant Protocol as Protocol Handler
+    participant Miner as TKN Miner
+    participant SymbolTable as Symbol Table
+    participant SyncStream as Sync Stream
+    participant Bank as LRU Bank
+    participant Memgraph as Memgraph DB
+
+    Note over Client,Memgraph: TKN Pattern Mining Algorithm Flow
+
+    Client->>Server: Send data stream
+    Server->>Protocol: Handle incoming data
+    
+    Protocol->>Protocol: Parse message type<br/>(JSON/String/Binary/Batch)
+    Protocol->>SymbolTable: getHash(parsedData)
+    SymbolTable->>SymbolTable: computeHash() using cyrb53
+    SymbolTable-->>Protocol: HashedValue[]
+    
+    Protocol->>Miner: transform(hashedValues, callback)
+    
+    Note over Miner,Bank: Core Pattern Mining Loop
+    
+    loop For each hashed segment
+        Miner->>Miner: window.push(segment)
+        Miner->>Miner: windowKey = getKey(window)
+        
+        alt Pattern is known
+            Miner->>Bank: has(windowKey)?
+            Bank-->>Miner: true (pattern exists)
+            Note over Miner: Continue extending window<br/>(no token emission)
+        else Pattern is novel
+            Bank-->>Miner: false (new pattern)
+            Miner->>Miner: knownPattern = window.slice(0, -1)
+            Miner->>Miner: knownKey = getKey(knownPattern)
+            
+            Note over Miner,Bank: Learn new patterns
+            Miner->>Bank: set(knownKey, true)
+            Miner->>Bank: set(windowKey, true)
+            
+            Note over Miner: Emit token with known pattern
+            Miner->>Miner: token = {hashes: knownPattern, idx: idx++}
+            Miner->>Miner: window = [segment] (reset)
+            
+            Miner-->>Protocol: callback(null, token)
+            Protocol->>SyncStream: process(token)
+        end
+    end
+    
+    Note over SyncStream,Memgraph: Token Relationship Processing
+    
+    SyncStream->>SyncStream: tokenBuffer.push(token)
+    
+    alt Buffer has 2+ tokens
+        SyncStream->>SyncStream: processBatch()
+        
+        loop Process token pairs
+            SyncStream->>SyncStream: tkn1 = shift(), tkn2 = peek()
+            SyncStream->>SymbolTable: getDataArray(tkn1.hashes)
+            SymbolTable-->>SyncStream: Original values
+            SyncStream->>SyncStream: createStorageMappings()
+            
+            Note over SyncStream,Memgraph: Store relationships
+            SyncStream->>Memgraph: Store dictionary entries
+            SyncStream->>Memgraph: CREATE relationship<br/>(tkn1)-[:D1]->(tkn2)
+        end
+        
+        SyncStream->>Memgraph: COMMIT transaction
+        Memgraph-->>SyncStream: Success
+    else Buffer < 2 tokens
+        Note over SyncStream: Wait for more tokens
+    end
+    
+    SyncStream-->>Protocol: callback()
+    Protocol-->>Server: Processing complete
+    Server-->>Client: Acknowledgment

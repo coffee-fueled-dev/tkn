@@ -1,0 +1,35 @@
+{
+  "name": "tkn-shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "require": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./environment": {
+      "import": "./src/environment.ts",
+      "require": "./src/environment.ts",
+      "types": "./src/environment.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "peerDependencies": {
+    "zod": "^3.25.64"
+  }
+}
