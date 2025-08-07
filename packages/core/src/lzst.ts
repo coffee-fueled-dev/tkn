@@ -12,6 +12,9 @@ export class LZST {
   private candidate: Uint8Array | null = null;
   readonly memory: LRUCache<number, boolean>;
   readonly generateKey: KeyGenerator;
+  private bytesIn: number = 0;
+  private bytesOut: number = 0;
+  private timeStart: number | null = null;
 
   constructor({
     memorySize = 10_000,
@@ -27,6 +30,8 @@ export class LZST {
   }
 
   processByte(byte: number) {
+    if (this.timeStart === null) this.timeStart = performance.now();
+    this.bytesIn += 1;
     if (this.candidate === null) {
       this.candidate = new Uint8Array([byte]);
       this.memory.set(this.generateKey(this.candidate), true);
@@ -44,6 +49,7 @@ export class LZST {
     } else {
       this.memory.set(candidateKey, true);
       this.candidate = new Uint8Array([byte]);
+      this.bytesOut += previous.length;
       return previous;
     }
   }
@@ -69,5 +75,16 @@ export class LZST {
   clear() {
     this.candidate = new Uint8Array();
     this.memory.clear();
+  }
+
+  throughput() {
+    if (!this.timeStart) return null;
+    const durationMS = performance.now() - this.timeStart;
+    return {
+      durationMS,
+      bytesIn: this.bytesIn,
+      bytesOut: this.bytesOut,
+      rateMBs: (this.bytesOut * 0.000001) / (durationMS / 1000),
+    };
   }
 }

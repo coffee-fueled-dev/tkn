@@ -5,6 +5,7 @@ import { readFile } from "../shared/read-file";
 const WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../");
 const TEST_FILE_PATH = path.join(
   WORKSPACE_ROOT,
+  // "corpora/tiny-stories-samples/output/tinystories_10_stories.txt"
   "corpora/brown-corpus/output/brown_gold_standard.txt"
 );
 
@@ -26,6 +27,8 @@ for await (const chunk of (await readFile(TEST_FILE_PATH)).stream) {
     }
   }
 }
+
+console.log(lzst.throughput());
 
 const uniqueTokenCount = new Set(tokens).size;
 console.log(
