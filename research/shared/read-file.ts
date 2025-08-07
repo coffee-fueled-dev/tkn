@@ -12,7 +12,6 @@ export const readFile = async (filePath: string) => {
 
   logger.info({ fileSize: file.size }, "Processing corpus file");
 
-  // Convert ReadableStream to async iterable
   const stream = file.stream();
   const reader = stream.getReader();
 
