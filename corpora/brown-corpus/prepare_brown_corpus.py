@@ -3,9 +3,9 @@
 Brown Corpus Preparation Script for Unsupervised Segmentation Experiments
 
 This script prepares the NLTK Brown Corpus for use with the TKN CLI tool.
-It creates two files in the output/ directory:
-1. output/brown_unsegmented.txt - concatenated text without spaces (input for TKN)
-2. output/brown_gold_standard.txt - space-separated words (ground truth for evaluation)
+It creates two files in the .corpus/ directory:
+1. .corpus/brown_unsegmented.txt - concatenated text without spaces (input for TKN)
+2. .corpus/brown_gold_standard.txt - space-separated words (ground truth for evaluation)
 """
 
 import nltk
@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 # Configuration
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR = Path(".corpus")
 OUTPUT_UNSEGMENTED_FILE = OUTPUT_DIR / "brown_unsegmented.txt"
 OUTPUT_GOLD_STANDARD_FILE = OUTPUT_DIR / "brown_gold_standard.txt"
 MAX_WORDS = None  # Set to a number to limit corpus size for testing, None for full corpus
@@ -22,14 +22,14 @@ MAX_WORDS = None  # Set to a number to limit corpus size for testing, None for f
 def ensure_nltk_data():
     """Download required NLTK data if not already present."""
     print("🔍 Checking NLTK data availability...")
-    
+
     try:
         nltk.data.find('corpora/brown')
         print("✅ Brown corpus data found")
     except LookupError:
         print("📥 Downloading Brown corpus data...")
         nltk.download('brown')
-    
+
     try:
         nltk.data.find('tokenizers/punkt')
         print("✅ Punkt tokenizer found")
@@ -44,26 +44,26 @@ def prepare_corpus():
     """
     print("\n🤖 NLTK Brown Corpus Preparation Script")
     print("=" * 50)
-    
+
     # Ensure NLTK data is available
     ensure_nltk_data()
-    
+
     # Import after ensuring data is available
     from nltk.corpus import brown
-    
+
     print(f"\n📚 Loading Brown Corpus from NLTK...")
     # The Brown Corpus in NLTK is a list of lists of words.
     sents = brown.sents()
     print(f"✅ Loaded {len(sents):,} sentences.")
 
     all_gold_words = []
-    
+
     # This regex will keep only alphabetic characters.
     # It removes numbers, punctuation, and symbols.
     pattern = re.compile(r'[^a-z]')
 
     print("🔄 Processing sentences: converting to lowercase and removing punctuation/numbers...")
-    
+
     word_count = 0
     for sent in sents:
         for word in sent:
@@ -75,18 +75,18 @@ def prepare_corpus():
             if clean_word:
                 all_gold_words.append(clean_word)
                 word_count += 1
-                
+
                 # Stop if we've reached the word limit
                 if MAX_WORDS and word_count >= MAX_WORDS:
                     print(f"🛑 Reached word limit of {MAX_WORDS:,}")
                     break
-        
+
         if MAX_WORDS and word_count >= MAX_WORDS:
             break
-    
+
     print(f"✅ Processed {len(all_gold_words):,} total words.")
 
-    # Create output directory if it doesn't exist
+    # Create .corpus directory if it doesn't exist
     OUTPUT_DIR.mkdir(exist_ok=True)
     print(f"📁 Output directory: {OUTPUT_DIR.absolute()}")
 
@@ -95,7 +95,7 @@ def prepare_corpus():
     with open(OUTPUT_GOLD_STANDARD_FILE, "w", encoding="utf-8") as f:
         # Join all cleaned words with a single space
         f.write(" ".join(all_gold_words))
-    
+
     gold_size = OUTPUT_GOLD_STANDARD_FILE.stat().st_size
     print(f"✅ Gold standard file created ({gold_size:,} bytes)")
 
@@ -104,33 +104,33 @@ def prepare_corpus():
     with open(OUTPUT_UNSEGMENTED_FILE, "w", encoding="utf-8") as f:
         # Join all cleaned words with NO space
         f.write("".join(all_gold_words))
-    
+
     unsegmented_size = OUTPUT_UNSEGMENTED_FILE.stat().st_size
     print(f"✅ Unsegmented file created ({unsegmented_size:,} bytes)")
 
     # --- Final Sanity Check ---
     print("\n🔍 Sanity Check")
     print("-" * 20)
-    
+
     with open(OUTPUT_GOLD_STANDARD_FILE, "r", encoding="utf-8") as f:
         gold_content = f.read(100)  # Read first 100 chars
         print(f"Gold Standard start: '{gold_content}...'")
-        
+
     with open(OUTPUT_UNSEGMENTED_FILE, "r", encoding="utf-8") as f:
         unsegmented_content = f.read(100)  # Read first 100 chars
         print(f"Unsegmented start:   '{unsegmented_content}...'")
-    
+
     # Calculate some statistics
     total_chars = len("".join(all_gold_words))
     avg_word_length = total_chars / len(all_gold_words) if all_gold_words else 0
-    
+
     print(f"\n📊 Corpus Statistics")
     print("-" * 20)
     print(f"Total words: {len(all_gold_words):,}")
     print(f"Total characters: {total_chars:,}")
     print(f"Average word length: {avg_word_length:.2f} characters")
     print(f"Unique words: {len(set(all_gold_words)):,}")
-        
+
     print("\n✅ Corpus preparation complete!")
     print("\n💡 Next steps:")
     print(f"   1. Use '{OUTPUT_UNSEGMENTED_FILE}' as input to your TKN CLI")
@@ -151,4 +151,4 @@ def main():
         raise
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     // Enable latest features
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext"],
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",
+    "types": ["bun-types", "node"], // include Bun’s globals
 
     "allowJs": true,
 

@@ -1,35 +1,22 @@
 {
-  "name": "tkn-monorepo",
-  "version": "1.0.0",
+  "name": "@tkn/monorepo",
+  "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
   "workspaces": [
     "packages/*",
-    "corpora/*",
-    "research/*"
+    "tools/*",
+    "studies"
   ],
   "scripts": {
-    "context": "bun scripts/context.ts",
-    "build": "bun --filter='*' run build",
-    "research:segmentation": "bun run ./research/word-segmentation/index.ts",
-    "corpus:install-deps": "cd corpora && python3 -m pip install -r requirements.txt",
-    "corpus:install-tinystories-deps": "cd corpora/tiny-stories-samples && python3 -m pip install -r requirements.txt",
-    "corpus:bpe": "cd corpora && python3 bpe.py",
-    "corpus:download-tinystories": "cd corpora/tiny-stories-samples && python3 download_stories.py",
-    "corpus:send": "bun scripts/corpus-send.ts",
-    "corpus:prepare-brown": "cd corpora/brown-corpus && python3 prepare_brown_corpus.py"
+    "context": "bun run --filter @protologic/scripts context",
+    "install-kuzu": "KUZU_NODEJS_SKIP_PREBUILD=1 npm install kuzu"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/parse-gitignore": "^1.0.2",
-    "typescript": "^5.0.0"
-  },
-  "engines": {
-    "bun": ">=1.0.0"
-  },
-  "packageManager": "bun@1.2.1",
-  "dependencies": {
     "minimatch": "^10.0.3",
     "parse-gitignore": "^2.0.0"
-  }
+  },
+  "peerDependencies": {}
 }
