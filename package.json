@@ -8,8 +8,7 @@
     "tools/*"
   ],
   "scripts": {
-    "context": "bun run --filter @protologic/scripts context",
-    "install-kuzu": "KUZU_NODEJS_SKIP_PREBUILD=1 npm install kuzu"
+    "context": "bun run --filter @protologic/scripts context"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -17,5 +16,8 @@
     "minimatch": "^10.0.3",
     "parse-gitignore": "^2.0.0"
   },
-  "peerDependencies": {}
+  "peerDependencies": {},
+  "trustedDependencies": [
+    "kuzu"
+  ]
 }
