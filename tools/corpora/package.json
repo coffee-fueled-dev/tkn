@@ -1,15 +1,14 @@
 {
-  "name": "@tkn/scripts",
+  "name": "@tkn/corpora",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "context": "bun run src/context.ts"
+    "corpus:tinystories": "bun run src/tinystories.ts",
+    "corpus:brown": "bun run src/brown.ts"
   },
   "devDependencies": {
-    "@types/parse-gitignore": "^1.0.2",
-    "minimatch": "^10.0.3",
-    "parse-gitignore": "^2.0.0"
+    "jszip": "^3.10.1"
   },
   "peerDependencies": {},
   "dependencies": {}

@@ -8,13 +8,12 @@
     "tools/*"
   ],
   "scripts": {
-    "context": "bun run --filter @protologic/scripts context"
+    "context": "bun run --filter @tkn/scripts context",
+    "corpus:tinystories": "bun run --filter @tkn/corpora corpus:tinystories",
+    "corpus:brown": "bun run --filter @tkn/corpora corpus:brown"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "@types/parse-gitignore": "^1.0.2",
-    "minimatch": "^10.0.3",
-    "parse-gitignore": "^2.0.0"
+    "@types/bun": "latest"
   },
   "peerDependencies": {},
   "trustedDependencies": [
