@@ -1,0 +1,11 @@
+{
+  "name": "@tkn/scripts",
+  "version": "0.1.0-beta.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "context": "bun run src/context.ts"
+  },
+  "devDependencies": {},
+  "peerDependencies": {}
+}

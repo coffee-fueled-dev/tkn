@@ -5,8 +5,7 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "tools/*",
-    "studies"
+    "tools/*"
   ],
   "scripts": {
     "context": "bun run --filter @protologic/scripts context",
