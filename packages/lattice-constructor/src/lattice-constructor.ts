@@ -29,8 +29,16 @@ export class LatticeConstructor {
 
   private readonly _batchSize: number;
 
-  constructor(database?: kuzu.Database, batchSize = 1000) {
-    this._db = database ?? new kuzu.Database("./tokens");
+  constructor(
+    database?: {
+      instance?: kuzu.Database;
+      path?: string;
+    },
+    batchSize = 200,
+  ) {
+    this._db =
+      database?.instance ??
+      new kuzu.Database(database?.path ?? ":memory:", undefined, undefined);
     this._conn = new kuzu.Connection(this._db);
     this._batchSize = Math.max(1, batchSize);
   }
