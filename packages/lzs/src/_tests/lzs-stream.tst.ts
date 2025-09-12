@@ -8,7 +8,7 @@ describe("LZSStream", () => {
     // 1. Setup
     const lzs = new LZS({
       keyGenerator: new RollingHash(),
-      cache: {},
+      cache: { size: 10_000 },
       trustThreshold: 1,
     });
     const streamAdapter = new LZSStream(lzs);

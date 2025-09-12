@@ -1,5 +1,5 @@
 {
-  "name": "@tkn/lattice-constructor",
+  "name": "@tkn/tokenizer",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,8 @@
   "devDependencies": {},
   "peerDependencies": {},
   "dependencies": {
+    "@tkn/token-cache": "workspace:*",
+    "@tkn/serializers": "workspace:*",
     "kuzu": "^0.11.2",
     "queue": "^7.0.0"
   }

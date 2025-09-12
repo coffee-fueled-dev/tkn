@@ -9,7 +9,9 @@
     }
   },
   "scripts": {},
-  "devDependencies": {},
+  "devDependencies": {
+    "@tkn/lzs": "workspace:*"
+  },
   "peerDependencies": {},
   "dependencies": {}
 }

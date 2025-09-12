@@ -1,0 +1,24 @@
+{
+  "name": "@tkn/studies-perplexity",
+  "version": "0.1.0-beta.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "dependencies": {
+    "@tkn/tokenizer": "workspace:*",
+    "@tkn/token-cache": "workspace:*",
+    "@tkn/lzs": "workspace:*",
+    "@tkn/serializers": "workspace:*",
+    "@tkn/studies-shared": "workspace:*",
+    "kuzu": "^0.11.2",
+    "lru-cache": "^11.2.1",
+    "queue": "^7.0.0"
+  }
+}

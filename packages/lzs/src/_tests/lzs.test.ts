@@ -16,14 +16,22 @@ describe("LZS", () => {
   test("should correctly process the sequence [0, 1, 1, 2, 1, 2, 3]", () => {
     const input = [0, 1, 1, 2, 1, 2, 3];
 
-    const expectedOutput = [null, [0], [1], [1], [2], null, [1, 2]];
-    let output: (number[] | null)[] = [];
+    const expectedOutput = [
+      null,
+      "\\x00",
+      "\\x01",
+      "\\x01",
+      "\\x02",
+      null,
+      "\\x01\\x02",
+    ];
+    let output: (string | null)[] = [];
     for (const byte of input) {
       output.push(lzs.processByte(byte));
     }
 
     output.push(lzs.flush().current);
-    expectedOutput.push([3]);
+    expectedOutput.push("\\x03");
     expect(output).toEqual(expectedOutput);
   });
 });
@@ -54,5 +62,6 @@ test("should handle an empty input", () => {
   expect(output).toEqual([null]);
 });
 
-// Should produce different outputs from the same sequence with different trust thresholds
-// Should produce different outputs from the same sequence with different cache sizes
+// Should produce different values from the same sequence with different trust thresholds
+// Should produce different cache states from the same sequence with different trust thresholds
+// Should produce different values from the same sequence with different cache sizes

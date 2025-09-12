@@ -1,13 +1,15 @@
 import { LRUCache } from "lru-cache";
 import type {
-  KeyGenerator,
-  ICache,
   ILZS,
   ILZSConfig,
   IFlushResult,
   IThroughputMetrics,
   ILZSFactory,
+  IKeyGenerator,
+  ILZSCache,
+  CachedToken,
 } from "./domain";
+import { escapedHex } from "@tkn/serializers";
 
 /**
  * Lempel-Ziv Stream Tokenizer (LZS) is a greedy pattern finding algorithm that
@@ -20,65 +22,79 @@ import type {
  */
 export class LZS implements ILZS {
   private _trustThreshold: number;
-  readonly _cache: ICache<number, number>;
-  readonly _keyGenerator: KeyGenerator;
+  readonly _cache: ILZSCache;
+  readonly _keyGenerator: IKeyGenerator;
   private _candidate: number[] | null = null;
   private _bytesIn: number = 0;
   private _bytesOut: number = 0;
   private _timeStart: number | null = null;
 
-  constructor({
-    keyGenerator,
-    cache: { size = 10_000, strategy },
-    trustThreshold = 1,
-  }: ILZSConfig) {
-    this._cache =
-      strategy ??
-      new LRUCache({
-        max: size,
+  constructor({ keyGenerator, cache, trustThreshold = 1 }: ILZSConfig) {
+    if (cache.strategy) {
+      this._cache = cache.strategy;
+    } else {
+      this._cache = new LRUCache<number, CachedToken>({
+        max: cache.size ?? 10_000,
       });
+    }
 
     this._keyGenerator = keyGenerator;
     this._trustThreshold = Math.max(1, trustThreshold);
   }
 
-  processByte(byte: number): number[] | null {
+  processByte(byte: number): string | null {
     if (this._timeStart === null) this._timeStart = performance.now();
     this._bytesIn += 1;
     const candidateKey = this._keyGenerator.update(byte);
-    const timesSeen = this._cache.get(candidateKey) ?? 0;
+    const cachedCandidate = this._cache.get(candidateKey) ?? { strength: 0 };
 
     // Initialize the candidate on the first received byte
     if (this._candidate === null) {
       this._candidate = [byte];
-      if (timesSeen > 0) {
-        this._cache.set(candidateKey, timesSeen + 1);
-      } else {
-        this._cache.set(candidateKey, timesSeen + 1);
-      }
+      this._cache.set(candidateKey, {
+        strength: cachedCandidate.strength + 1,
+        bytes: escapedHex(this._candidate),
+      });
       return null;
     }
 
     this._candidate.push(byte);
 
-    if (timesSeen >= this._trustThreshold) {
-      this._cache.set(candidateKey, timesSeen + 1);
-      return null;
-    } else {
+    if (cachedCandidate.strength === 0) {
+      // Set the new candidate in the cache
+      const candidateByteString = escapedHex(this._candidate);
+      this._cache.set(candidateKey, {
+        strength: 1,
+        bytes: candidateByteString,
+      });
       const previous = this._candidate.splice(0, this._candidate.length - 1);
-      // Reset the candidate and recalculate the hash from the new single-byte candidate
-      this._cache.set(candidateKey, timesSeen + 1);
-      this._keyGenerator.recalculate(new Uint8Array(this._candidate));
+      this._keyGenerator.recalculate(this._candidate.slice());
       this._bytesOut += previous.length;
-
-      return previous;
+      return candidateByteString.slice(0, -4);
+    } else if (cachedCandidate.strength < this._trustThreshold) {
+      // Increment the candidate in the cache
+      this._cache.set(candidateKey, {
+        ...cachedCandidate,
+        strength: cachedCandidate.strength + 1,
+      } as CachedToken); // we know bytes will be set because this token has already been seen
+      const previous = this._candidate.splice(0, this._candidate.length - 1);
+      this._keyGenerator.recalculate(this._candidate.slice());
+      this._bytesOut += previous.length;
+      return escapedHex(previous);
+    } else {
+      // Candidate is trusted, continue accumulating
+      this._cache.set(candidateKey, {
+        ...cachedCandidate,
+        strength: cachedCandidate.strength + 1,
+      } as CachedToken); // we know bytes will be set because this token has already been seen
+      return null;
     }
   }
 
   flush(): IFlushResult {
     return {
-      memory: this._cache,
-      current: this._candidate ? this._candidate : null,
+      cache: this._cache,
+      current: this._candidate ? escapedHex(this._candidate) : null,
     };
   }
 

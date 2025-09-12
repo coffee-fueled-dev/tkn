@@ -1,5 +1,5 @@
 {
-  "name": "@tkn/decoder",
+  "name": "@tkn/studies-shared",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,5 @@
   "scripts": {},
   "devDependencies": {},
   "peerDependencies": {},
-  "dependencies": {
-    "kuzu": "^0.11.2",
-    "lru-cache": "^11.2.1"
-  }
+  "dependencies": {}
 }

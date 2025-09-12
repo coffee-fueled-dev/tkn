@@ -2,7 +2,7 @@
  * Configuration for LZS memory management
  */
 export interface ICacheConfig {
-  strategy?: ICache<number, number>;
+  strategy?: ILZSCache;
   size?: number;
 }
 
@@ -10,7 +10,7 @@ export interface ICacheConfig {
  * Configuration interface for LZS instances
  */
 export interface ILZSConfig {
-  keyGenerator: KeyGenerator;
+  keyGenerator: IKeyGenerator;
   cache: ICacheConfig;
   // The number of cache hits required to trust a pattern
   trustThreshold?: number;
@@ -20,8 +20,8 @@ export interface ILZSConfig {
  * Result of flushing LZS state
  */
 export interface IFlushResult {
-  memory: ICache<number, number>;
-  current: number[] | null;
+  cache: ILZSCache;
+  current: string | null;
 }
 
 /**
@@ -39,12 +39,12 @@ export interface IThroughputMetrics {
  * Defines the contract for the core, synchronous pattern finding and tokenization logic.
  */
 export interface ILZS {
-  readonly cache: ICache<number, number>;
+  readonly cache: ILZSCache;
 
   /**
    * The key generator used for hashing patterns
    */
-  readonly keyGenerator: KeyGenerator;
+  readonly keyGenerator: IKeyGenerator;
 
   /**
    * Current memory usage in bytes (platform dependent)
@@ -59,9 +59,9 @@ export interface ILZS {
   /**
    * Processes a single byte and returns the longest known subsequence if found
    * @param byte The byte to process
-   * @returns Uint8Array of the longest known subsequence, or null if pattern continues
+   * @returns Hex bytes string of the longest known subsequence, or null if pattern continues
    */
-  processByte(byte: number): number[] | null;
+  processByte(byte: number): string | null;
 
   /**
    * Flushes the current state and returns memory and current candidate
@@ -107,7 +107,7 @@ export interface ILZSStream {
  * Defines the interface for a stateful hash generator that can be updated
  * incrementally.
  */
-export interface KeyGenerator {
+export interface IKeyGenerator {
   /** Returns the current value of the hash. */
   readonly value: number;
 
@@ -121,28 +121,33 @@ export interface KeyGenerator {
    * Resets the hash and recalculates it from a full buffer.
    * This is used when the candidate sequence is reset.
    */
-  recalculate(buffer: Uint8Array): number;
+  recalculate(buffer: Uint8Array | number[]): number;
 }
 
+export type CachedToken = {
+  strength: number;
+  bytes: string; // Hex string of the token's bytes
+};
+
 /**
- * Defines a generic interface for a key-value cache.
+ * Defines a generic interface for a token cache.
  * This allows for abstracting the underlying cache implementation (e.g., LRU, LFU)
  * as long as it conforms to this contract.
  */
-export interface ICache<K, V> {
+export interface ILZSCache {
   /**
-   * Retrieves a value from the cache for the given key.
-   * @param key The key to look up.
-   * @returns The cached value, or undefined if the key is not in the cache.
+   * Retrieves a token's strength from the cache for the given key.
+   * @param hash The hash of the token to look up.
+   * @returns The cached strength, or undefined if the token is not in the cache.
    */
-  get(key: K): V | undefined;
+  get(hash: number | undefined): CachedToken | undefined;
 
   /**
    * Stores a key-value pair in the cache.
-   * @param key The key to store.
-   * @param value The value to associate with the key.
+   * @param hash The hash of the token to store.
+   * @param strength The strength of the token.
    */
-  set(key: K, value: V): void;
+  set(hash: number, token: CachedToken): void;
 
   /**
    * Clears all entries from the cache.
@@ -153,4 +158,6 @@ export interface ICache<K, V> {
    * Returns the number of entries in the cache.
    */
   size: number;
+
+  values(): Generator<CachedToken, void, unknown>;
 }

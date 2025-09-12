@@ -1,5 +1,5 @@
 {
-  "name": "@tkn/lzs",
+  "name": "@tkn/token-cache",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,13 @@
     }
   },
   "scripts": {},
-  "devDependencies": {},
+  "devDependencies": {
+    "@tkn/lzs": "workspace:*"
+
+  },
   "peerDependencies": {},
   "dependencies": {
-    "@tkn/serializers": "workspace:*"
+    "@tkn/serializers": "workspace:*",
+    "lru-cache": "^11.2.1"
   }
 }

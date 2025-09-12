@@ -2,7 +2,7 @@
  * Fast deterministic hash optimized for short sequences
  * Uses a simplified polynomial hash with minimal operations
  */
-export const fastHash = (buffer: Uint8Array): number => {
+export const fastHash = (buffer: Uint8Array | number[]): number => {
   const length = buffer.length;
   if (length === 0) return 0;
 
@@ -26,10 +26,9 @@ export const fastHash = (buffer: Uint8Array): number => {
         0
       );
     default:
-      // For longer sequences, use optimized loop
       for (let i = 0; i < length; i++) {
-        hash ^= buffer[i];
-        hash = (hash * 31) >>> 0; // Faster than FNV prime
+        hash ^= buffer[i] & 0xff; // mask to 8 bits to support arbitrary number types
+        hash = (hash * 31) >>> 0;
       }
       return hash;
   }

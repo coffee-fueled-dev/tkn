@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "tools/*"
+    "tools/*",
+    "studies/*"
   ],
   "scripts": {
     "context": "bun run --filter @tkn/scripts context",

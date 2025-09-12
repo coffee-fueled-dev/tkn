@@ -7,32 +7,67 @@
         "@types/bun": "latest",
       },
     },
-    "packages/decoder": {
-      "name": "@tkn/decoder",
+    "packages/lattice-tokenizer": {
+      "name": "@tkn/lattice-tokenizer",
       "version": "0.1.0-beta.0",
       "dependencies": {
+        "@tkn/serializers": "workspace:*",
         "kuzu": "^0.11.2",
         "lru-cache": "^11.2.1",
-      },
-    },
-    "packages/lattice-constructor": {
-      "name": "@tkn/lattice-constructor",
-      "version": "0.1.0-beta.0",
-      "dependencies": {
-        "kuzu": "^0.11.2",
-        "queue": "^7.0.0",
       },
     },
     "packages/lzs": {
       "name": "@tkn/lzs",
       "version": "0.1.0-beta.0",
       "dependencies": {
-        "lru-cache": "^11.2.1",
+        "@tkn/serializers": "workspace:*",
       },
     },
     "packages/serializers": {
       "name": "@tkn/serializers",
       "version": "0.1.0-beta.0",
+      "devDependencies": {
+        "@tkn/lzs": "workspace:*",
+      },
+    },
+    "packages/token-cache": {
+      "name": "@tkn/token-cache",
+      "version": "0.1.0-beta.0",
+      "dependencies": {
+        "@tkn/serializers": "workspace:*",
+        "lru-cache": "^11.2.1",
+      },
+      "devDependencies": {
+        "@tkn/lzs": "workspace:*",
+      },
+    },
+    "packages/tokenizer": {
+      "name": "@tkn/tokenizer",
+      "version": "0.1.0-beta.0",
+      "dependencies": {
+        "@tkn/serializers": "workspace:*",
+        "@tkn/token-cache": "workspace:*",
+        "kuzu": "^0.11.2",
+        "queue": "^7.0.0",
+      },
+    },
+    "studies/shared": {
+      "name": "@tkn/studies-shared",
+      "version": "0.1.0-beta.0",
+    },
+    "studies/tokenizer-training": {
+      "name": "@tkn/studies-perplexity",
+      "version": "0.1.0-beta.0",
+      "dependencies": {
+        "@tkn/lzs": "workspace:*",
+        "@tkn/serializers": "workspace:*",
+        "@tkn/studies-shared": "workspace:*",
+        "@tkn/token-cache": "workspace:*",
+        "@tkn/tokenizer": "workspace:*",
+        "kuzu": "^0.11.2",
+        "lru-cache": "^11.2.1",
+        "queue": "^7.0.0",
+      },
     },
     "tools/corpora": {
       "name": "@tkn/corpora",
@@ -61,15 +96,21 @@
 
     "@tkn/corpora": ["@tkn/corpora@workspace:tools/corpora"],
 
-    "@tkn/decoder": ["@tkn/decoder@workspace:packages/decoder"],
-
-    "@tkn/lattice-constructor": ["@tkn/lattice-constructor@workspace:packages/lattice-constructor"],
+    "@tkn/lattice-tokenizer": ["@tkn/lattice-tokenizer@workspace:packages/lattice-tokenizer"],
 
     "@tkn/lzs": ["@tkn/lzs@workspace:packages/lzs"],
 
     "@tkn/scripts": ["@tkn/scripts@workspace:tools/scripts"],
 
     "@tkn/serializers": ["@tkn/serializers@workspace:packages/serializers"],
+
+    "@tkn/studies-perplexity": ["@tkn/studies-perplexity@workspace:studies/tokenizer-training"],
+
+    "@tkn/studies-shared": ["@tkn/studies-shared@workspace:studies/shared"],
+
+    "@tkn/token-cache": ["@tkn/token-cache@workspace:packages/token-cache"],
+
+    "@tkn/tokenizer": ["@tkn/tokenizer@workspace:packages/tokenizer"],
 
     "@types/bun": ["@types/bun@1.2.21", "", { "dependencies": { "bun-types": "1.2.21" } }, "sha512-NiDnvEqmbfQ6dmZ3EeUO577s4P5bf4HCTXtI6trMc6f6RzirY5IrF3aIookuSpyslFzrnvv2lmEWv5HyC1X79A=="],
 
