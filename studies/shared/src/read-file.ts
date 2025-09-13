@@ -25,5 +25,5 @@ export const readFile = async (filePath: string) => {
     },
   };
 
-  return { stream: asyncIterable };
+  return { stream: asyncIterable, size: file.size };
 };

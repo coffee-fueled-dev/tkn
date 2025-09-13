@@ -13,7 +13,6 @@
   "peerDependencies": {},
   "dependencies": {
     "@tkn/tokenizer": "workspace:*",
-    "@tkn/token-cache": "workspace:*",
     "@tkn/lzs": "workspace:*",
     "@tkn/serializers": "workspace:*",
     "@tkn/studies-shared": "workspace:*",
