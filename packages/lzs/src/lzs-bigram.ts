@@ -1,8 +1,11 @@
-import { Hex } from "@tkn/serializers";
 import { Uint8 } from "../../serializers/src/uint8";
 import type { ILZSConfig } from "./domain";
 import { LZS } from "./lzs";
 
+/**
+ * LZSBigram is a wrapper around LZS that reprocesses tokens
+ * that were emit by a byte-level LZS into chunk-level tokens
+ */
 export class LZSBigram extends LZS {
   private _lzsBytes: LZS;
 
