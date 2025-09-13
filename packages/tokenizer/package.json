@@ -12,7 +12,6 @@
   "devDependencies": {},
   "peerDependencies": {},
   "dependencies": {
-    "@tkn/token-cache": "workspace:*",
     "@tkn/serializers": "workspace:*",
     "kuzu": "^0.11.2",
     "queue": "^7.0.0"
