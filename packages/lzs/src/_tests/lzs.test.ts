@@ -10,28 +10,25 @@ describe("LZS", () => {
       keyGenerator: new RollingHash(),
       cache: { size: 100 },
       trustThreshold: 1,
+      trieSearch: {
+        mode: "enabled",
+      },
     });
   });
 
   test("should correctly process the sequence [0, 1, 1, 2, 1, 2, 3]", () => {
     const input = [0, 1, 1, 2, 1, 2, 3];
 
-    const expectedOutput = [
-      null,
-      "\\x00",
-      "\\x01",
-      "\\x01",
-      "\\x02",
-      null,
-      "\\x01\\x02",
-    ];
-    let output: (string | null)[] = [];
+    const expectedOutput = [null, [0], [1], [1], [2], null, [1, 2]];
+    let output: (number[] | null)[] = [];
     for (const byte of input) {
       output.push(lzs.processByte(byte));
     }
 
     output.push(lzs.flush().current);
-    expectedOutput.push("\\x03");
+    expectedOutput.push([3]);
+
+    console.log(output);
     expect(output).toEqual(expectedOutput);
   });
 });

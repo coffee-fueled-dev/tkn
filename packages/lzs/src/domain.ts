@@ -1,3 +1,6 @@
+import type { IByteTrie } from "./byte-trie";
+import type { ILZSMonitor, IStats } from "./monitor";
+
 /**
  * Configuration for LZS memory management
  */
@@ -14,6 +17,14 @@ export interface ILZSConfig {
   cache: ICacheConfig;
   // The number of cache hits required to trust a pattern
   trustThreshold?: number;
+  stats?: {
+    mode?: "none" | "simple" | "extended";
+    monitor?: ILZSMonitor;
+  };
+  trieSearch?: {
+    mode?: "enabled" | "disabled";
+    trie?: IByteTrie;
+  };
 }
 
 /**
@@ -21,17 +32,7 @@ export interface ILZSConfig {
  */
 export interface IFlushResult {
   cache: ILZSCache;
-  current: string | null;
-}
-
-/**
- * Throughput metrics for LZS performance
- */
-export interface IThroughputMetrics {
-  durationMS: number;
-  bytesIn: number;
-  bytesOut: number;
-  rateMBs: number;
+  current: number[] | null;
 }
 
 /**
@@ -54,14 +55,14 @@ export interface ILZS {
   /**
    * Current throughput metrics, null if no processing has occurred
    */
-  readonly throughput: IThroughputMetrics | null;
+  readonly stats: IStats | null;
 
   /**
    * Processes a single byte and returns the longest known subsequence if found
    * @param byte The byte to process
    * @returns Hex bytes string of the longest known subsequence, or null if pattern continues
    */
-  processByte(byte: number): string | null;
+  processByte(byte: number): number[] | null;
 
   /**
    * Flushes the current state and returns memory and current candidate
@@ -79,28 +80,6 @@ export interface ILZS {
    * @param threshold The new trust threshold
    */
   setTrustThreshold(threshold: number): number;
-}
-
-/**
- * Factory interface for creating LZS instances
- */
-export interface ILZSFactory {
-  create(config: ILZSConfig): ILZS;
-}
-
-/**
- * Interface for the LZS Stream Adapter.
- * Provides a streaming interface on top of a core ILZS instance.
- */
-export interface ILZSStream {
-  /**
-   * A readable stream for the output tokens.
-   */
-  readonly readable: ReadableStream<Uint8Array | null>;
-  /**
-   * A writable stream for the input bytes.
-   */
-  readonly writable: WritableStream<number>;
 }
 
 /**
@@ -124,11 +103,6 @@ export interface IKeyGenerator {
   recalculate(buffer: Uint8Array | number[]): number;
 }
 
-export type CachedToken = {
-  strength: number;
-  bytes: string; // Hex string of the token's bytes
-};
-
 /**
  * Defines a generic interface for a token cache.
  * This allows for abstracting the underlying cache implementation (e.g., LRU, LFU)
@@ -140,14 +114,14 @@ export interface ILZSCache {
    * @param hash The hash of the token to look up.
    * @returns The cached strength, or undefined if the token is not in the cache.
    */
-  get(hash: number | undefined): CachedToken | undefined;
+  get(hash: number | undefined): number | undefined;
 
   /**
    * Stores a key-value pair in the cache.
    * @param hash The hash of the token to store.
    * @param strength The strength of the token.
    */
-  set(hash: number, token: CachedToken): void;
+  set(hash: number, strength: number): void;
 
   /**
    * Clears all entries from the cache.
@@ -159,5 +133,5 @@ export interface ILZSCache {
    */
   size: number;
 
-  values(): Generator<CachedToken, void, unknown>;
+  values(): Generator<number, void, unknown>;
 }
