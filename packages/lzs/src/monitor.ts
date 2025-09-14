@@ -57,9 +57,9 @@ export type CounterType =
  */
 export interface ILZSMonitor {
   /**
-   * Whether extended stats are enabled
+   * Stats mode
    */
-  readonly extendedStats: boolean;
+  readonly _mode: "disabled" | "performance-only" | "extended";
 
   /**
    * Increment a counter by the specified amount
@@ -92,12 +92,17 @@ export interface ILZSMonitor {
   stats: IStats | null;
 }
 
+export interface ILZMonitorConfig {
+  mode?: "disabled" | "performance-only" | "extended";
+  batchSize?: number;
+}
+
 /**
  * High-performance monitor with batched async counter updates
  * Minimizes hot path overhead by batching counter increments
  */
 export class LZSMonitor implements ILZSMonitor {
-  readonly extendedStats: boolean;
+  readonly _mode: "disabled" | "performance-only" | "extended";
   private _timeStart: number | null = null;
 
   // Current counter values
@@ -146,8 +151,8 @@ export class LZSMonitor implements ILZSMonitor {
   private _batchCount = 0;
   private _flushTimer: Timer | null = null;
 
-  constructor(extendedStats = false, batchSize = 1000) {
-    this.extendedStats = extendedStats;
+  constructor({ mode = "disabled", batchSize = 1000 }: ILZMonitorConfig) {
+    this._mode = mode;
     this._batchSize = batchSize;
   }
 
@@ -159,7 +164,7 @@ export class LZSMonitor implements ILZSMonitor {
   increment(counter: CounterType, amount = 1): void {
     // Always track bytesIn/bytesOut for basic performance metrics
     const isBasicCounter = counter === "bytesIn" || counter === "bytesOut";
-    if (!this.extendedStats && !isBasicCounter) return;
+    if (!(this._mode === "extended") && !isBasicCounter) return;
 
     this._pending[counter] += amount;
     this._batchCount++;
@@ -275,7 +280,7 @@ export class LZSMonitor implements ILZSMonitor {
 }
 
 export class NoOpMonitor implements ILZSMonitor {
-  readonly extendedStats = false;
+  readonly _mode: "disabled" | "performance-only" | "extended" = "disabled";
 
   // Current counter values
   private _counters: Record<CounterType, number> = {

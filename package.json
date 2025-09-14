@@ -15,7 +15,8 @@
     "corpus:multilingual": "bun run --filter @tkn/corpora corpus:multilingual",
     "eval:english-small": "bun run --elide-lines 0 --filter @tkn/studies-tokenizer-training eval:english-small",
     "eval:english-medium": "bun run --elide-lines 0 --filter @tkn/studies-tokenizer-training eval:english-medium",
-    "eval:cross-lingual": "bun run --elide-lines 0 --filter @tkn/studies-tokenizer-training eval:cross-lingual"
+    "eval:cross-lingual": "bun run --elide-lines 0 --filter @tkn/studies-tokenizer-training eval:cross-lingual",
+    "eval:performance": "bun run --elide-lines 0 --filter @tkn/studies-tokenizer-training eval:performance"
   },
   "devDependencies": {
     "@types/bun": "latest"

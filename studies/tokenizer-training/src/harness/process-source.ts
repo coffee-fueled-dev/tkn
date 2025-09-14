@@ -1,5 +1,5 @@
 import { LZS, type ILZSConfig } from "@tkn/lzs";
-import { Ingest, Lattice, type ILatticeConfig } from "@tkn/tokenizer";
+import { Ingest, Lattice, type IIngestConfig } from "@tkn/tokenizer";
 import { Hex, UnicodeReader } from "@tkn/serializers";
 
 export interface Source {
@@ -8,55 +8,53 @@ export interface Source {
 
 export interface ProcessSourceConfig {
   source: Source;
-  showProgress?: boolean;
+  logProgress?: boolean;
   logSequences?: boolean;
-  logTokens?: boolean;
   lzs?: ILZSConfig | LZS;
-  lattice?: ILatticeConfig | Lattice; // Optionally supply a lattice or config to train the tokenizer, otherwise this is a dry run of the LZS
+  ingest?: IIngestConfig | Ingest | false; // Optionally supply an ingest or config to train the tokenizer, otherwise this is a dry run of the LZS
 }
 
 export interface ProcessResult {
   lzsStats: LZS["stats"];
   latticeStats: Lattice["stats"];
-  lzs: LZS;
-  lattice: Lattice | undefined;
 }
 
 export async function processSource({
   source,
-  showProgress = false,
+  logProgress = false,
   logSequences = false,
   lzs,
-  lattice,
-}: ProcessSourceConfig): Promise<ProcessResult> {
-  const _lattice = lattice
-    ? lattice instanceof Lattice
-      ? lattice
-      : new Lattice(lattice)
-    : undefined;
+  ingest,
+}: ProcessSourceConfig): Promise<ProcessResult & { ingest?: Ingest }> {
   const _lzs = lzs instanceof LZS ? lzs : new LZS(lzs);
-  const _ingest = _lattice ? new Ingest({ lattice: _lattice }) : undefined;
+
+  const _ingest =
+    ingest === false
+      ? undefined
+      : ingest instanceof Ingest
+      ? ingest
+      : new Ingest(ingest);
 
   try {
     let processedCodepoints = 0;
 
     for await (const chunk of source) {
       for (const codepoint of chunk) {
-        const token = _lzs.processByte(codepoint);
-        if (showProgress) processedCodepoints++;
+        const sequence = _lzs.processByte(codepoint);
+        if (logProgress) processedCodepoints++;
 
-        if (token) {
+        if (sequence) {
           if (logSequences) {
-            console.log(`Token: ${UnicodeReader.codepointsToString(token)}`);
+            console.log(`${UnicodeReader.codepointsToString(sequence)}`);
           }
           if (_ingest) {
-            // Convert Unicode codepoints to UTF-8 bytes before hex encoding
-            const utf8Bytes = UnicodeReader.codepointsToUtf8Bytes(token);
-            _ingest.buffer(Hex.fromBytes(utf8Bytes));
+            _ingest.buffer(
+              Hex.fromBytes(UnicodeReader.codepointsToUtf8Bytes(sequence))
+            );
           }
         }
 
-        if (showProgress && processedCodepoints % 10000 === 0) {
+        if (logProgress && processedCodepoints % 10000 === 0) {
           process.stdout.write(
             `\r📈 Processed ${processedCodepoints} codepoints`
           );
@@ -66,18 +64,16 @@ export async function processSource({
 
     if (_ingest) _ingest.flush();
 
-    if (showProgress) {
+    if (logProgress) {
       console.log(); // New line after progress
     }
 
     const result: ProcessResult = {
       lzsStats: _lzs.stats ?? null,
-      latticeStats: _lattice?.stats ?? null,
-      lzs: _lzs,
-      lattice: _lattice,
+      latticeStats: _ingest?.stats ?? null,
     };
 
-    return result;
+    return { ...result, ingest: _ingest };
   } catch (error) {
     throw error;
   }

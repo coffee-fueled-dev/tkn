@@ -4,68 +4,97 @@ import { UnicodeReader } from "@tkn/serializers";
 import {
   type JobConfig,
   type JobResult,
-  type JobRunner,
+  type IJobRunner,
+  type Sample,
   type SampleResult,
   type TrainingConfig,
   DEFAULT_CONFIG,
 } from "./domain";
 import { processSource, type Source } from "./process-source";
 
-export class DefaultJobRunner implements JobRunner {
+export class JobRunner implements IJobRunner {
   private _sharedConfig?: TrainingConfig;
 
   constructor(sharedConfig?: TrainingConfig) {
     this._sharedConfig = sharedConfig;
   }
 
-  async run(config: JobConfig): Promise<JobResult> {
-    const mergedConfig = { ...DEFAULT_CONFIG, ...config.trainingConfig };
+  async run(config: Partial<JobConfig>): Promise<JobResult> {
+    if (!config.source) {
+      throw new Error("Source is required");
+    }
+    if (!config.sampleConfig) {
+      throw new Error("Sample config is required");
+    }
+    if (!config.process) {
+      throw new Error("Process config is required");
+    }
+    const mergedConfig = {
+      ...DEFAULT_CONFIG,
+      ...this._sharedConfig,
+      ...config.trainingConfig,
+    };
 
-    console.log(`🚀 Starting job: ${config.metadata?.language || "Unknown"}`);
+    console.log(
+      `🚀 Starting job\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
+    );
 
     // Training phase
-    console.log(`📚 Training phase...`);
-    const source = await this.convertToSource(config.source);
+    console.log(`📚 Training tokenizer`);
+    const source = await this.normalizeSource(config.source);
 
     // Pass the configs down to processSource - it will handle instance creation
     const trainingResult = await processSource({
       source,
-      showProgress: mergedConfig.showProgress,
-      logTokens: mergedConfig.logTokens,
-      lzs: this._sharedConfig?.lzs || mergedConfig.lzs,
-      lattice: this._sharedConfig?.lattice || mergedConfig.lattice,
+      ...mergedConfig,
     });
 
-    console.log(`✅ Training complete`);
+    if (!config.sampleConfig.run) {
+      console.log(
+        `✨ Job complete\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
+      );
+      return {
+        training: trainingResult,
+        metadata: config.metadata,
+        process: { ...config.process, completedAt: performance.now() },
+      };
+    }
+
+    if (!config.sampleConfig.samples) {
+      throw new Error(
+        "Samples are required when sampleConfig.run is set to true"
+      );
+    }
 
     // Evaluation phase
-    console.log(`🧪 Evaluation phase (${config.samples.length} samples)...`);
-    const sampleResults = await this.evaluateSamples(
-      config.samples,
-      mergedConfig,
-      trainingResult.lattice
+    console.log(
+      `🧪 Tokenizing samples (${config.sampleConfig.samples.length} samples)`
     );
+    const sampleResults = await this.evaluateSamples(
+      config.sampleConfig.samples,
+      config.sampleConfig,
+      trainingResult.ingest?.lattice
+    );
+
+    console.log(`✨ Job complete\n${config.metadata ?? ""}`);
 
     const avgTokensPerSample =
       sampleResults.reduce((sum, r) => sum + r.tokens.length, 0) /
       sampleResults.length;
 
-    const result: JobResult = {
+    return {
       training: trainingResult,
-      evaluations: sampleResults,
-      avgTokensPerSample,
-      totalSamples: sampleResults.length,
-      trainingConfig: mergedConfig,
       metadata: config.metadata,
+      samples: {
+        results: sampleResults,
+        total: sampleResults.length,
+        avgTokensPerSample,
+      },
+      process: { ...config.process, completedAt: performance.now() },
     };
-
-    console.log(
-      `✨ Job complete - ${avgTokensPerSample.toFixed(2)} avg tokens/sample`
-    );
-    return result;
   }
 
-  private async convertToSource(source: JobConfig["source"]): Promise<Source> {
+  private async normalizeSource(source: JobConfig["source"]): Promise<Source> {
     // If it's already a Source (has Symbol.asyncIterator), return as-is
     if (typeof source === "object" && Symbol.asyncIterator in source) {
       return source as Source;
@@ -78,7 +107,7 @@ export class DefaultJobRunner implements JobRunner {
     // Create an async iterable source that yields chunks of codepoints
     return {
       async *[Symbol.asyncIterator]() {
-        const chunkSize = 8192; // Match UnicodeReader's chunk size
+        const chunkSize = 8192;
         for (let i = 0; i < codepoints.length; i += chunkSize) {
           yield codepoints.slice(i, i + chunkSize);
         }
@@ -87,20 +116,15 @@ export class DefaultJobRunner implements JobRunner {
   }
 
   private async evaluateSamples(
-    samples: JobConfig["samples"],
-    config: TrainingConfig,
-    trainedLattice?: Lattice
+    samples: Sample[],
+    sampleConfig: JobConfig["sampleConfig"],
+    lattice?: Lattice
   ): Promise<SampleResult[]> {
     const results: SampleResult[] = [];
-
-    // Use the trained lattice from training phase, or fallback to shared/config
-    const latticeToUse =
-      trainedLattice || this._sharedConfig?.lattice || config.lattice;
-
-    const tokenizer = new Tokenizer({ lattice: latticeToUse });
+    const tokenizer = new Tokenizer({ lattice });
 
     for (const sample of samples) {
-      if (config.showProgress) {
+      if (sampleConfig.logProgress) {
         console.log(
           `🔍 Evaluating: "${sample.content.substring(0, 50)}${
             sample.content.length > 50 ? "..." : ""
@@ -109,13 +133,8 @@ export class DefaultJobRunner implements JobRunner {
       }
 
       try {
-        // Use the tokenizer to decode the sample text into tokens
         const tokens = tokenizer.decode(sample.content);
-
-        // Convert tokens to readable strings
         const strings = tokenizer.toStrings(tokens);
-
-        // Calculate perplexity stats
         const stats = tokenizer.computePerplexity(tokens);
 
         const result: SampleResult = {
@@ -128,7 +147,7 @@ export class DefaultJobRunner implements JobRunner {
 
         results.push(result);
 
-        if (config.logSequences) {
+        if (sampleConfig.logTokens) {
           console.log(
             `  📋 Tokens (${tokens.length}):\n[${strings.join(
               " | "
@@ -139,7 +158,7 @@ export class DefaultJobRunner implements JobRunner {
               .filter(Boolean)
               .join(" | ")}]`
           );
-        } else if (config.showProgress) {
+        } else if (sampleConfig.logProgress) {
           console.log(`  ✅ ${tokens.length} tokens`);
         }
       } catch (error) {

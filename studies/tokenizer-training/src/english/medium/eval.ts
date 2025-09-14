@@ -1,28 +1,17 @@
-import { DefaultJobRunner, DEFAULT_CONFIG } from "../../harness";
+import { JobRunner } from "../../harness";
 import { ENGLISH_MEDIUM_JOBS } from "./job-configs";
 
 async function main() {
   console.log("🌍 Starting English - Medium Corpus Evaluation");
-  console.log(`📊 Running 1 language evaluation`);
+  console.log(`📊 Running ${ENGLISH_MEDIUM_JOBS.length} language evaluations`);
 
-  const runner = new DefaultJobRunner();
+  const runner = new JobRunner({ logSequences: true });
   const results = [];
 
   for (const jobConfig of ENGLISH_MEDIUM_JOBS) {
-    const fullConfig = {
-      ...jobConfig,
-      trainingConfig: { ...DEFAULT_CONFIG, logSequences: true },
-    };
-
     try {
-      const result = await runner.run(fullConfig);
+      const result = await runner.run(jobConfig);
       results.push(result);
-
-      console.log(
-        `✅ ${
-          result.metadata?.language
-        } complete: ${result.avgTokensPerSample.toFixed(2)} avg tokens/sample`
-      );
     } catch (error) {
       console.error(
         `❌ Failed to process ${jobConfig.metadata?.language}:`,
@@ -31,30 +20,7 @@ async function main() {
     }
   }
 
-  // Summary
-  console.log("\n🎯 Evaluation Summary:");
-  console.log("═".repeat(50));
-
-  for (const result of results) {
-    const lang = result.metadata?.language || "Unknown";
-    const avgTokens = result.avgTokensPerSample.toFixed(2);
-    const totalSamples = result.totalSamples;
-
-    console.log(
-      `${lang.padEnd(12)} │ ${avgTokens.padStart(
-        8
-      )} tokens/sample │ ${totalSamples} samples`
-    );
-  }
-
-  const overallAvg =
-    results.reduce((sum, r) => sum + r.avgTokensPerSample, 0) / results.length;
-  console.log("─".repeat(50));
-  console.log(
-    `Overall Avg │ ${overallAvg.toFixed(2).padStart(8)} tokens/sample │ ${
-      results.length
-    } languages`
-  );
+  console.log(JSON.stringify(results, null, 2));
 }
 
 main().catch(console.error);

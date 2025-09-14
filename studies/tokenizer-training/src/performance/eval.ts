@@ -1,14 +1,19 @@
 import { JobRunner } from "../harness";
-import { CROSS_LINGUAL_JOBS } from "./job-configs";
+import { PERFORMANCE_JOBS } from "./job-configs";
 
 async function main() {
-  console.log("🌍 Starting Cross-Lingual Evaluation");
-  console.log(`📊 Running ${CROSS_LINGUAL_JOBS.length} language evaluations`);
+  console.log("🌍 Starting LZS Performance Evaluation");
+  console.log(`📊 Running ${PERFORMANCE_JOBS.length} evaluations`);
 
-  const runner = new JobRunner({ logSequences: true });
+  const runner = new JobRunner({
+    ingest: false,
+    logSequences: false,
+    logProgress: false,
+    lzs: { stats: { mode: "performance-only" } },
+  });
   const results = [];
 
-  for (const jobConfig of CROSS_LINGUAL_JOBS) {
+  for (const jobConfig of PERFORMANCE_JOBS) {
     try {
       const result = await runner.run(jobConfig);
       results.push(result);

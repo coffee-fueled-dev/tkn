@@ -1,45 +1,50 @@
-import { Database } from "bun:sqlite";
-
-import type {
-  IIngestConfig,
-  ILatticeConfig,
-  Ingest,
-  Lattice,
-  PerplexityResult,
-} from "@tkn/tokenizer";
-import { type ProcessResult, type Source } from "./process-source";
+import type { IIngestConfig, Ingest, PerplexityResult } from "@tkn/tokenizer";
+import type { ProcessResult, Source } from "./process-source";
 import type { BunFile } from "bun";
 import type { ILZSConfig, LZS } from "@tkn/lzs";
-import { RollingHash } from "@tkn/serializers";
 
 export interface Sample {
   content: string;
   metadata?: Record<string, string>;
 }
 
+export interface JobProcessMetadata {
+  id: string;
+  createdAt: number; // nanosecond timestamp
+  completedAt?: number | "incomplete"; // nanosecond timestamp
+}
+
 export interface JobConfig {
   source: Source | BunFile;
-  samples: Sample[];
   metadata?: Record<string, string>;
+  process: JobProcessMetadata;
   trainingConfig: TrainingConfig;
+  sampleConfig: SampleConfig;
+}
+
+export interface SampleConfig {
+  run: boolean; // Whether to run the samples through the tokenizer
+  samples?: Sample[];
+  logTokens?: boolean;
+  logProgress?: boolean;
 }
 
 export interface TrainingConfig {
   lzs?: ILZSConfig | LZS;
-  lattice?: ILatticeConfig | Lattice;
-  ingest?: IIngestConfig | Ingest;
-  showProgress?: boolean;
-  logTokens?: boolean;
+  ingest?: IIngestConfig | Ingest | false;
   logSequences?: boolean;
+  logProgress?: boolean;
 }
 
 export interface JobResult {
   training: ProcessResult;
-  evaluations: SampleResult[];
-  avgTokensPerSample: number;
-  totalSamples: number;
-  trainingConfig: TrainingConfig;
   metadata?: JobConfig["metadata"];
+  process: JobConfig["process"];
+  samples?: {
+    results: SampleResult[];
+    total: number;
+    avgTokensPerSample: number;
+  };
 }
 
 export interface SampleResult {
@@ -64,14 +69,18 @@ export const DEFAULT_CONFIG: TrainingConfig = {
       tau: 0.8,
     },
   },
-  lattice: {}, // Default lattice config - creates in-memory database
   ingest: { batchSize: 70_000 },
 
-  showProgress: true,
-  logTokens: false,
+  logProgress: true,
   logSequences: false,
 };
 
-export interface JobRunner {
+export interface IJobRunner {
   run(config: JobConfig): Promise<JobResult>;
 }
+
+export const jobProcessMetadata = (): JobProcessMetadata => ({
+  id: Bun.randomUUIDv7("hex"),
+  createdAt: performance.now(),
+  completedAt: "incomplete",
+});

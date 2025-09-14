@@ -1,5 +1,5 @@
 import type { IByteTrie } from "./byte-trie";
-import type { ILZSMonitor, IStats } from "./monitor";
+import type { ILZMonitorConfig, ILZSMonitor, IStats } from "./monitor";
 
 /**
  * Configuration interface for LZS instances
@@ -10,7 +10,7 @@ export interface ILZSConfig {
   // The number of cache hits required to trust a pattern
   trustThreshold?: number;
   stats?: {
-    mode?: "none" | "simple" | "extended";
+    mode?: ILZMonitorConfig["mode"];
     monitor?: ILZSMonitor;
   };
   trieSearch?: {

@@ -20,7 +20,7 @@ export type PerplexityResult = {
 };
 
 export interface ITokenizerConfig {
-  lattice?: ILatticeConfig | Lattice;
+  lattice?: ILatticeConfig | Lattice | false;
 }
 
 export class Tokenizer {

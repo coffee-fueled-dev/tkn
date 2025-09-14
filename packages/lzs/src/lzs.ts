@@ -393,24 +393,15 @@ export class LZS implements ILZS {
     this._mdlTau = mdl?.tau ?? 0.8; // entropy scaling factor
 
     // Monitor
-    if (stats?.monitor) {
+    if (!stats || stats.mode === "disabled") {
+      this._monitor = new NoOpMonitor();
+      this._enableMonitoring = false;
+    } else if (stats.monitor) {
       this._monitor = stats.monitor;
       this._enableMonitoring = true;
     } else {
-      switch (stats?.mode) {
-        case "extended":
-          this._monitor = new LZSMonitor(true);
-          this._enableMonitoring = true;
-          break;
-        case "simple":
-          this._monitor = new LZSMonitor(false);
-          this._enableMonitoring = true;
-          break;
-        default:
-          this._monitor = new NoOpMonitor();
-          this._enableMonitoring = false;
-          break;
-      }
+      this._monitor = new LZSMonitor({ mode: stats.mode });
+      this._enableMonitoring = true;
     }
 
     this._boundHandleUnknown = this.handleUnknownCandidate.bind(this);

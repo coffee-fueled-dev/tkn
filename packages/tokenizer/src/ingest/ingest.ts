@@ -8,17 +8,17 @@ import {
 export interface IIngestConfig {
   batchSize?: number;
   lattice?: ILatticeConfig | Lattice;
-  showProgress?: boolean;
+  logProgress?: boolean;
 }
 
 export class Ingest {
   private _lattice: Lattice;
   private readonly _batchSize: number;
   private _tokenBuffer: string[] = [];
-  private _showProgress?: boolean;
+  private _logProgress?: boolean;
 
   constructor(
-    { batchSize = 1000, lattice, showProgress = false }: IIngestConfig = {
+    { batchSize = 1000, lattice, logProgress = false }: IIngestConfig = {
       batchSize: 1000,
     }
   ) {
@@ -29,7 +29,7 @@ export class Ingest {
       this._lattice = new Lattice({});
     }
     this._batchSize = Math.max(1, batchSize);
-    this._showProgress = showProgress;
+    this._logProgress = logProgress;
   }
 
   /** Buffer a token (hex string). Commits when the buffer reaches batchSize. */
@@ -62,7 +62,7 @@ export class Ingest {
       });
     }
 
-    if (this._showProgress) {
+    if (this._logProgress) {
       console.log(
         `Committing ${tokenOccurrences.length} token occurrences and ${edgeOccurrences.length} edge occurrences...`
       );
@@ -79,5 +79,13 @@ export class Ingest {
     // Update all token degrees once at the end
     console.log("Finalizing token degrees...");
     this._lattice.updateTokenDegrees();
+  }
+
+  get stats(): Lattice["stats"] {
+    return this._lattice.stats;
+  }
+
+  get lattice(): Lattice {
+    return this._lattice;
   }
 }
