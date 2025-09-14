@@ -2,55 +2,74 @@
  * Throughput metrics for LZS performance
  */
 export interface IStats {
+  // Basic performance
   durationMS: number;
   bytesIn: number;
   bytesOut: number;
-  timesNull: number;
-  timesExtended: number;
-  timesDeferred: number;
-  opportunitiesUnknown: number;
-  opportunitiesUntrusted: number;
-  opportunitiesTotal: number;
-  hadLongerUnknown: number;
-  hadLongerUntrusted: number;
-  hadLongerTotal: number;
-  missedExtensionRate: number;
-  missedExtensionRateUnknown: number;
-  missedExtensionRateUntrusted: number;
-  avgChildDegreeUnknown: number;
-  avgChildDegreeUntrusted: number;
   rateMBs: number;
-  // MDL statistics
-  mdlChecked: number;
-  mdlExtended: number;
-  mdlEmitted: number;
-  avgMDLLogP: number;
-  // EWMA baseline tracking
+
+  // Candidate flow
+  candidatesStarted: number;
+  tokensEmitted: number;
+
+  // Gate behavior (understanding greediness vs panic)
+  mdlGateChecked: number;
+  mdlGatePassed: number;
+  mdlGateFailRate: number;
+
+  cacheGateChecked: number;
+  cacheGatePassed: number;
+  cacheGateFailRate: number;
+
+  trieGateChecked: number;
+  trieGatePassed: number;
+  trieGateFailRate: number;
+
+  // Emission quality metrics
+  emissionHadLongerOptions: number;
+  emissionMissedExtensionRate: number;
+  emissionAvgChildDegree: number;
+
+  // MDL algorithm insights
+  avgMDLSurprisal: number;
   mdlBaselineMean: number;
   mdlBaselineStd: number;
 }
 
 /**
  * Counter types for performance monitoring
+ *
+ * Flow-based naming:
+ * - Input: bytesIn, candidatesStarted
+ * - Gates: mdl*, cache*, trie*, emission*
+ * - Output: bytesOut, tokensEmitted
  */
 export type CounterType =
+  // Input metrics
   | "bytesIn"
   | "bytesOut"
-  | "timesNull"
-  | "timesExtended"
-  | "timesDeferred"
-  | "oppUnknown"
-  | "oppUntrusted"
-  | "hadLongerUnknown"
-  | "hadLongerUntrusted"
-  | "childDegreeSumUnknown"
-  | "childDegreeSumUntrusted"
-  | "mdlChecked"
-  | "mdlExtended"
-  | "mdlEmitted"
-  | "mdlSumLogP"
-  | "mdlBaselineMeanSum"
-  | "mdlBaselineStdSum";
+  | "candidatesStarted"
+
+  // Gate decision metrics (continue vs emit)
+  | "mdlGateChecked"
+  | "mdlGatePassed"
+  | "mdlGateFailed"
+  | "cacheGateChecked"
+  | "cacheGatePassed"
+  | "cacheGateFailed"
+  | "trieGateChecked"
+  | "trieGatePassed"
+  | "trieGateFailed"
+
+  // Emission metrics
+  | "tokensEmitted"
+  | "emissionHadLongerOptions"
+  | "emissionSumChildDegree"
+
+  // MDL algorithm metrics
+  | "mdlSumSurprisal"
+  | "mdlSumBaselineMean"
+  | "mdlSumBaselineStd";
 
 /**
  * Interface for performance monitoring with async counter updates
@@ -109,42 +128,44 @@ export class LZSMonitor implements ILZSMonitor {
   private _counters: Record<CounterType, number> = {
     bytesIn: 0,
     bytesOut: 0,
-    timesNull: 0,
-    timesExtended: 0,
-    timesDeferred: 0,
-    oppUnknown: 0,
-    oppUntrusted: 0,
-    hadLongerUnknown: 0,
-    hadLongerUntrusted: 0,
-    childDegreeSumUnknown: 0,
-    childDegreeSumUntrusted: 0,
-    mdlChecked: 0,
-    mdlExtended: 0,
-    mdlEmitted: 0,
-    mdlSumLogP: 0,
-    mdlBaselineMeanSum: 0,
-    mdlBaselineStdSum: 0,
+    candidatesStarted: 0,
+    mdlGateChecked: 0,
+    mdlGatePassed: 0,
+    mdlGateFailed: 0,
+    cacheGateChecked: 0,
+    cacheGatePassed: 0,
+    cacheGateFailed: 0,
+    trieGateChecked: 0,
+    trieGatePassed: 0,
+    trieGateFailed: 0,
+    tokensEmitted: 0,
+    emissionHadLongerOptions: 0,
+    emissionSumChildDegree: 0,
+    mdlSumSurprisal: 0,
+    mdlSumBaselineMean: 0,
+    mdlSumBaselineStd: 0,
   };
 
   // Batched pending updates
   private _pending: Record<CounterType, number> = {
     bytesIn: 0,
     bytesOut: 0,
-    timesNull: 0,
-    timesExtended: 0,
-    timesDeferred: 0,
-    oppUnknown: 0,
-    oppUntrusted: 0,
-    hadLongerUnknown: 0,
-    hadLongerUntrusted: 0,
-    childDegreeSumUnknown: 0,
-    childDegreeSumUntrusted: 0,
-    mdlChecked: 0,
-    mdlExtended: 0,
-    mdlEmitted: 0,
-    mdlSumLogP: 0,
-    mdlBaselineMeanSum: 0,
-    mdlBaselineStdSum: 0,
+    candidatesStarted: 0,
+    mdlGateChecked: 0,
+    mdlGatePassed: 0,
+    mdlGateFailed: 0,
+    cacheGateChecked: 0,
+    cacheGatePassed: 0,
+    cacheGateFailed: 0,
+    trieGateChecked: 0,
+    trieGatePassed: 0,
+    trieGateFailed: 0,
+    tokensEmitted: 0,
+    emissionHadLongerOptions: 0,
+    emissionSumChildDegree: 0,
+    mdlSumSurprisal: 0,
+    mdlSumBaselineMean: 0,
+    mdlSumBaselineStd: 0,
   };
 
   private _batchSize: number;
@@ -162,8 +183,12 @@ export class LZSMonitor implements ILZSMonitor {
   }
 
   increment(counter: CounterType, amount = 1): void {
-    // Always track bytesIn/bytesOut for basic performance metrics
-    const isBasicCounter = counter === "bytesIn" || counter === "bytesOut";
+    // Always track basic performance metrics regardless of mode
+    const isBasicCounter =
+      counter === "bytesIn" ||
+      counter === "bytesOut" ||
+      counter === "candidatesStarted" ||
+      counter === "tokensEmitted";
     if (!(this._mode === "extended") && !isBasicCounter) return;
 
     this._pending[counter] += amount;
@@ -220,60 +245,54 @@ export class LZSMonitor implements ILZSMonitor {
     const durationMS = performance.now() - this._timeStart;
     const counters = this.getCounters();
 
-    const oppTotal = counters.oppUnknown + counters.oppUntrusted;
-    const hadLongerTotal =
-      counters.hadLongerUnknown + counters.hadLongerUntrusted;
-
     return {
+      // Basic performance
       durationMS,
       bytesIn: counters.bytesIn,
       bytesOut: counters.bytesOut,
-
-      timesNull: counters.timesNull,
-      timesExtended: counters.timesExtended,
-      timesDeferred: counters.timesDeferred,
-
-      // New: opportunities & missed-extensions metrics
-      opportunitiesUnknown: counters.oppUnknown,
-      opportunitiesUntrusted: counters.oppUntrusted,
-      opportunitiesTotal: oppTotal,
-
-      hadLongerUnknown: counters.hadLongerUnknown,
-      hadLongerUntrusted: counters.hadLongerUntrusted,
-      hadLongerTotal: hadLongerTotal,
-
-      // Helpful rates
-      missedExtensionRate: oppTotal ? hadLongerTotal / oppTotal : 0,
-      missedExtensionRateUnknown: counters.oppUnknown
-        ? counters.hadLongerUnknown / counters.oppUnknown
-        : 0,
-      missedExtensionRateUntrusted: counters.oppUntrusted
-        ? counters.hadLongerUntrusted / counters.oppUntrusted
-        : 0,
-
-      // Diagnostics: average child degree at emission points
-      avgChildDegreeUnknown: counters.oppUnknown
-        ? counters.childDegreeSumUnknown / counters.oppUnknown
-        : 0,
-      avgChildDegreeUntrusted: counters.oppUntrusted
-        ? counters.childDegreeSumUntrusted / counters.oppUntrusted
-        : 0,
-
       rateMBs: (counters.bytesOut * 0.000001) / (durationMS / 1000),
 
-      // MDL statistics
-      mdlChecked: counters.mdlChecked,
-      mdlExtended: counters.mdlExtended,
-      mdlEmitted: counters.mdlEmitted,
-      avgMDLLogP: counters.mdlChecked
-        ? counters.mdlSumLogP / counters.mdlChecked
+      // Candidate flow
+      candidatesStarted: counters.candidatesStarted,
+      tokensEmitted: counters.tokensEmitted,
+
+      // Gate behavior (understanding greediness vs panic)
+      mdlGateChecked: counters.mdlGateChecked,
+      mdlGatePassed: counters.mdlGatePassed,
+      mdlGateFailRate: counters.mdlGateChecked
+        ? counters.mdlGateFailed / counters.mdlGateChecked
         : 0,
-      // EWMA baseline tracking
-      mdlBaselineMean: counters.mdlChecked
-        ? counters.mdlBaselineMeanSum / counters.mdlChecked
+
+      cacheGateChecked: counters.cacheGateChecked,
+      cacheGatePassed: counters.cacheGatePassed,
+      cacheGateFailRate: counters.cacheGateChecked
+        ? counters.cacheGateFailed / counters.cacheGateChecked
         : 0,
-      mdlBaselineStd: counters.mdlChecked
-        ? counters.mdlBaselineStdSum / counters.mdlChecked
+
+      trieGateChecked: counters.trieGateChecked,
+      trieGatePassed: counters.trieGatePassed,
+      trieGateFailRate: counters.trieGateChecked
+        ? counters.trieGateFailed / counters.trieGateChecked
+        : 0,
+
+      // Emission quality metrics
+      emissionHadLongerOptions: counters.emissionHadLongerOptions,
+      emissionMissedExtensionRate: counters.tokensEmitted
+        ? counters.emissionHadLongerOptions / counters.tokensEmitted
+        : 0,
+      emissionAvgChildDegree: counters.tokensEmitted
+        ? counters.emissionSumChildDegree / counters.tokensEmitted
+        : 0,
+
+      // MDL algorithm insights
+      avgMDLSurprisal: counters.mdlGateChecked
+        ? counters.mdlSumSurprisal / counters.mdlGateChecked
+        : 0,
+      mdlBaselineMean: counters.mdlGateChecked
+        ? counters.mdlSumBaselineMean / counters.mdlGateChecked
+        : 0,
+      mdlBaselineStd: counters.mdlGateChecked
+        ? counters.mdlSumBaselineStd / counters.mdlGateChecked
         : 0,
     };
   }
@@ -286,21 +305,22 @@ export class NoOpMonitor implements ILZSMonitor {
   private _counters: Record<CounterType, number> = {
     bytesIn: 0,
     bytesOut: 0,
-    timesNull: 0,
-    timesExtended: 0,
-    timesDeferred: 0,
-    oppUnknown: 0,
-    oppUntrusted: 0,
-    hadLongerUnknown: 0,
-    hadLongerUntrusted: 0,
-    childDegreeSumUnknown: 0,
-    childDegreeSumUntrusted: 0,
-    mdlChecked: 0,
-    mdlExtended: 0,
-    mdlEmitted: 0,
-    mdlSumLogP: 0,
-    mdlBaselineMeanSum: 0,
-    mdlBaselineStdSum: 0,
+    candidatesStarted: 0,
+    mdlGateChecked: 0,
+    mdlGatePassed: 0,
+    mdlGateFailed: 0,
+    cacheGateChecked: 0,
+    cacheGatePassed: 0,
+    cacheGateFailed: 0,
+    trieGateChecked: 0,
+    trieGatePassed: 0,
+    trieGateFailed: 0,
+    tokensEmitted: 0,
+    emissionHadLongerOptions: 0,
+    emissionSumChildDegree: 0,
+    mdlSumSurprisal: 0,
+    mdlSumBaselineMean: 0,
+    mdlSumBaselineStd: 0,
   };
 
   increment(_counter: CounterType, _amount = 1): void {

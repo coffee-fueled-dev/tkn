@@ -4,9 +4,7 @@ import {
   type ILZS,
   type ILZSConfig,
   type ILZSCache,
-  type ILZSCacheConfig,
   type IKeyGenerator,
-  type IKeyGeneratorConfig,
   isILZSCache,
   isIKeyGenerator,
 } from "./domain";
@@ -25,7 +23,34 @@ import {
  * - O(1) emission by marking parent terminal via trie.insertPreviousOrMark()
  */
 export class LZS implements ILZS {
+  private _monitor: ILZSMonitor;
+  private _enableMonitoring: boolean;
+  private _trie: IByteTrie;
+  readonly _cache: ILZSCache;
+  readonly _keyGenerator: IKeyGenerator;
+  private _candidate: number[] | null = null;
+
   // --- MDL params ---
+  private readonly _oneMinusBeta: number; // = 1 - _mdlBeta
+  private readonly _c2: number; // = (_mdlC * _mdlC)
+
+  // Probability-domain EWMA (no logs)
+  private _ewmaP: number = 0.2; // init to a mild prior in [0,1]
+  private _ewmaP2: number = 0.08; // ~ ewmaP^2 to start
+
+  // Degree -> entropy threshold table: thr[d] = d^{-tau}
+  private _degThr!: Float64Array; // build once
+
+  private _initMDLTables(maxDeg = 512) {
+    const tbl = new Float64Array(maxDeg + 1);
+    tbl[0] = 0; // no branching: threshold 0 (always passes entropy check)
+    for (let d = 1; d <= maxDeg; d++) {
+      // thr(d) = exp(-tau * ln d) = d^{-tau}
+      tbl[d] = Math.exp(-this._mdlTau * Math.log(d));
+    }
+    this._degThr = tbl;
+  }
+
   private readonly _mdlAlpha: number; // α (Laplace smoothing)
   private readonly _mdlZMode: "child-degree" | "fixed";
   private readonly _mdlZFixed: number; // only used when mode === "fixed"
@@ -42,27 +67,11 @@ export class LZS implements ILZS {
   // Keep track of the *previous* candidate key (for p(next|prev))
   private _lastCandidateKey: number | null = null;
 
-  private _trustThreshold: number;
-  private _monitor: ILZSMonitor;
-  private _enableMonitoring: boolean;
-  private _trie: IByteTrie;
-
-  readonly _cache: ILZSCache;
-  readonly _keyGenerator: IKeyGenerator;
-
-  private _candidate: number[] | null = null;
-
   // Pre-bound handlers
-  private _boundHandleUnknown: (candidate: number[]) => number[];
-  private _boundHandleUntrusted: (
-    candidate: number[],
-    strength: number
-  ) => number[];
+  private _handleUnknownCandidate: (candidate: number[]) => number[];
 
-  // If you want the old “try root when parent unknown” behavior, set to true:
   private readonly _trieRootFallback = false;
 
-  // ---------- Core streaming logic ----------
   processByte(byte: number): number[] | null {
     this.monitorBytesIn();
 
@@ -73,7 +82,7 @@ export class LZS implements ILZS {
       // Start a new candidate with first byte
       this._candidate = [byte];
       this._cache.set(candidateKey, strength + 1);
-      this.monitorNull();
+      this.monitorCandidateStarted();
 
       this._trie.cursorInitFirst(byte);
 
@@ -85,83 +94,99 @@ export class LZS implements ILZS {
     // Extend candidate by one byte
     this._candidate.push(byte);
 
-    // ----- Trie: O(1) prefix update -----
     this._trie.cursorAdvance(byte, this._trieRootFallback);
 
     // Always maintain counts
     this._cache.set(candidateKey, strength + 1);
 
-    // === Adaptive MDL gate (EWMA + entropy scaling) ===
-    // Use previous candidate key (candidate *before* appending `byte`)
-    const prevKey = this._getPrevKey(); // MDL <<<
-    if (prevKey !== null) {
-      const prevCount = this._getPrevCount(prevKey); // count(prev)
-      const candCount = this._cache.get(candidateKey) ?? 0; // count(prev+byte)
-      const Z =
-        this._mdlZMode === "child-degree"
-          ? Math.max(1, this._trie.childDegreeAtParent())
-          : Math.max(1, this._mdlZFixed);
-
-      // p(next|prev) with Laplace smoothing
-      const numer = candCount + this._mdlAlpha;
-      const denom = prevCount + this._mdlAlpha * Z;
-      let p = denom > 0 ? numer / denom : 1 / Z; // fallback if denom==0
-      if (!(p > 0)) p = Number.EPSILON;
-
-      const s = -Math.log(p); // surprisal in nats
-
-      // EWMA relative surprise gate (#1)
-      const mPrev = this._mdlMean;
-      this._mdlMean = (1 - this._mdlBeta) * this._mdlMean + this._mdlBeta * s;
-      const d = s - mPrev;
-      this._mdlVar =
-        (1 - this._mdlBeta) * this._mdlVar + this._mdlBeta * (d * d);
-      const sigma = Math.sqrt(Math.max(this._mdlVar, 1e-12));
-
-      this.monitorMDLChecked(s, this._mdlMean, sigma); // MDL counters
-
-      // Local entropy scaling gate (#2)
-      const H_local = this._computeLocalEntropy();
-
-      // Combined decision: both gates must pass
-      const passRelative = s <= this._mdlMean - this._mdlC * sigma;
-      const passEntropy = s <= this._mdlTau * H_local;
-
-      if (passRelative && passEntropy) {
-        this.monitorMDLExtended();
-        // Treat as an extension fast-path
-        this.monitorExtension();
-        // Update rolling "previous key" to the *current* candidate key
-        this._lastCandidateKey = candidateKey; // MDL <<<
-        return null;
-      }
-      // else: let normal logic decide (it will likely emit)
+    // Gate 1: MDL gate (most restrictive)
+    this.monitorMDLGateChecked();
+    if (this.useMDLGate(candidateKey)) {
+      this.monitorMDLGatePassed();
+      return null;
     }
+    this.monitorMDLGateFailed();
 
-    // ---- Legacy trusted fast path (optional). You can keep or remove. ----
-    if (strength >= this._trustThreshold) {
-      this.monitorExtension();
-      // previous key becomes current
+    // Gate 2: Cache gate (check if we've seen this sequence before)
+    this.monitorCacheGateChecked();
+    if (strength >= 1) {
+      this.monitorCacheGatePassed();
       this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
     }
+    this.monitorCacheGateFailed();
 
-    // If trie says current candidate is a valid prefix, defer emission
+    // Gate 3: Trie gate (check if this could be extended further)
+    this.monitorTrieGateChecked();
     if (this._trie.cursorValid()) {
-      this.monitorTrieHit();
+      this.monitorTrieGatePassed();
       this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
     }
+    this.monitorTrieGateFailed();
 
-    // Otherwise emit previous
-    if (strength === 0) {
-      const emitted = this._boundHandleUnknown(this._candidate);
-      this.monitorMDLEmitted(); // MDL <<<
-      return emitted;
+    // All gates failed - emit the token
+    this.monitorTokenEmission();
+    return this._handleUnknownCandidate(this._candidate);
+  }
+  // Fast, allocation-free MDL-ish gate in probability space
+  private useMDLGate(candidateKey: number): boolean {
+    // previous candidate key before appending this byte
+    const prevKey = this._lastCandidateKey;
+    if (prevKey === null) return false;
+
+    // counts
+    const prevCount = this._cache.get(prevKey) ?? 0; // c
+    const candCount = this._cache.get(candidateKey) ?? 0; // r
+
+    // branching factor Z
+    let Z: number;
+    if (this._mdlZMode === "child-degree") {
+      // childDegreeAtParent() returns small int; clamp to table range [0..512]
+      const deg = this._trie.childDegreeAtParent();
+      Z = deg > 512 ? 512 : deg | 0; // int clamp
+    } else {
+      Z = this._mdlZFixed | 0;
     }
-    const emitted = this._boundHandleUntrusted(this._candidate, strength);
-    this.monitorMDLEmitted(); // MDL <<<
-    return emitted;
+    if (Z <= 0) Z = 1;
+
+    // Laplace-smoothed conditional p = (r + alpha) / (c + alpha * Z)
+    const numer = candCount + this._mdlAlpha;
+    const denom = prevCount + this._mdlAlpha * Z;
+    // denom should be > 0 except at very early cold-start
+    let p = denom > 0 ? numer / denom : 1 / Z;
+    if (p <= 0) p = Number.EPSILON;
+    if (p >= 1) p = 1 - 1e-12;
+
+    // ---- EWMA in probability space (no logs) ----
+    // Update means BEFORE thresholding (so state isn't biased by gate result)
+    const meanPrev = this._ewmaP;
+    const p2 = p * p;
+
+    // Exponential moving avg of p and p^2
+    this._ewmaP = this._oneMinusBeta * this._ewmaP + this._mdlBeta * p;
+    this._ewmaP2 = this._oneMinusBeta * this._ewmaP2 + this._mdlBeta * p2;
+
+    // variance and "relative surprise" test without sqrt:
+    // passRelative if (meanPrev - p)^2 >= (c^2) * var, with p <= meanPrev
+    // (If p > meanPrev, it's not "surprisingly low", so fail fast)
+    const varP = this._ewmaP2 - this._ewmaP * this._ewmaP;
+    const diff = meanPrev - p;
+    const passRelative =
+      diff > 0 && diff * diff >= this._c2 * (varP > 0 ? varP : 1e-12);
+
+    // ---- Entropy scaling: p must also exceed degree^{-tau} ----
+    // thrDeg = d^{-tau}; we precomputed into _degThr
+    // For Z from child-degree, use Z; for fixed mode, we can treat Z as branching proxy as well.
+    const thrDeg = this._degThr[Z <= 512 ? Z : 512];
+    const passEntropy = p >= thrDeg;
+
+    if (passRelative && passEntropy) {
+      // Accept extension; roll previous key forward
+      this._lastCandidateKey = candidateKey;
+      return true;
+    }
+    return false;
   }
 
   // ---------- Emit handlers (O(1) on trie) ----------
@@ -169,8 +194,7 @@ export class LZS implements ILZS {
     const lastByte = candidate[candidate.length - 1];
     const previous = candidate.slice(0, -1);
 
-    this.monitorUnknownBranch(previous);
-
+    this.monitorBytesOut(previous.length);
     // Keep last byte as new 1-byte candidate
     candidate.length = 1;
     candidate[0] = lastByte;
@@ -185,26 +209,6 @@ export class LZS implements ILZS {
     // until the next update(byte) happens, so clear lastCandidateKey.
     this._lastCandidateKey = null; // MDL <<<
 
-    return previous;
-  }
-
-  private handleUntrustedCandidate(
-    candidate: number[],
-    strength: number
-  ): number[] {
-    const lastByte = candidate[candidate.length - 1];
-    const previous = candidate.slice(0, -1);
-
-    this.monitorUntrustedBranch(previous);
-
-    candidate.length = 1;
-    candidate[0] = lastByte;
-    this._keyGenerator.recalculate(candidate);
-
-    this._trie.insertPreviousOrMark(previous, strength + 1);
-    this._trie.resetToSingleByte(lastByte);
-
-    this._lastCandidateKey = null; // MDL <<<
     return previous;
   }
 
@@ -234,53 +238,80 @@ export class LZS implements ILZS {
     this._monitor.start();
     this._monitor.increment("bytesIn");
   }
-  private monitorNull() {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("timesNull");
-  }
-  private monitorExtension() {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("timesExtended");
-  }
-  private monitorTrieHit() {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("timesDeferred");
-    this._monitor.increment("timesExtended");
-  }
-  private monitorUnknownBranch(previous: number[]) {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("bytesOut", previous.length);
-    this._monitor.increment("oppUnknown");
 
+  private monitorBytesOut(bytes: number) {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("bytesOut", bytes);
+  }
+
+  private monitorCandidateStarted() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("candidatesStarted");
+  }
+
+  // MDL Gate monitoring
+  private monitorMDLGateChecked() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlGateChecked");
+  }
+
+  private monitorMDLGatePassed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlGatePassed");
+  }
+
+  private monitorMDLGateFailed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlGateFailed");
+  }
+
+  // Cache Gate monitoring
+  private monitorCacheGateChecked() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("cacheGateChecked");
+  }
+
+  private monitorCacheGatePassed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("cacheGatePassed");
+  }
+
+  private monitorCacheGateFailed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("cacheGateFailed");
+  }
+
+  // Trie Gate monitoring
+  private monitorTrieGateChecked() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("trieGateChecked");
+  }
+
+  private monitorTrieGatePassed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("trieGatePassed");
+  }
+
+  private monitorTrieGateFailed() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("trieGateFailed");
+  }
+
+  // Token emission monitoring
+  private monitorTokenEmission() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("tokensEmitted");
     const deg = this._trie.childDegreeAtParent();
-    if (deg > 0) this._monitor.increment("hadLongerUnknown");
-    this._monitor.increment("childDegreeSumUnknown", deg);
-  }
-  private monitorUntrustedBranch(previous: number[]) {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("bytesOut", previous.length);
-    this._monitor.increment("oppUntrusted");
-
-    const deg = this._trie.childDegreeAtParent();
-    if (deg > 0) this._monitor.increment("hadLongerUntrusted");
-    this._monitor.increment("childDegreeSumUntrusted", deg);
+    if (deg > 0) this._monitor.increment("emissionHadLongerOptions");
+    this._monitor.increment("emissionSumChildDegree", deg);
   }
 
-  // ---------- Monitor additions for MDL ----------
-  private monitorMDLChecked(negLogP: number, mean: number, std: number) {
+  // MDL algorithm metrics
+  private monitorMDLMetrics(surprisal: number, mean: number, std: number) {
     if (!this._enableMonitoring) return;
-    this._monitor.increment("mdlChecked");
-    this._monitor.increment("mdlSumLogP", negLogP);
-    this._monitor.increment("mdlBaselineMeanSum", mean);
-    this._monitor.increment("mdlBaselineStdSum", std);
-  }
-  private monitorMDLExtended() {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("mdlExtended");
-  }
-  private monitorMDLEmitted() {
-    if (!this._enableMonitoring) return;
-    this._monitor.increment("mdlEmitted");
+    this._monitor.increment("mdlSumSurprisal", surprisal);
+    this._monitor.increment("mdlSumBaselineMean", mean);
+    this._monitor.increment("mdlSumBaselineStd", std);
   }
 
   // ---------- Management API ----------
@@ -291,11 +322,6 @@ export class LZS implements ILZS {
     };
   }
 
-  setTrustThreshold(threshold: number): number {
-    this._trustThreshold = threshold;
-    return threshold;
-  }
-
   get cache() {
     return this._cache;
   }
@@ -304,7 +330,7 @@ export class LZS implements ILZS {
   }
   get memoryUsage() {
     if (typeof process !== "undefined" && (process as any).memoryUsage) {
-      return (process as any).memoryUsage().heapUsed;
+      return process.memoryUsage().heapUsed;
     }
     return 0;
   }
@@ -327,14 +353,7 @@ export class LZS implements ILZS {
   }
 
   // ---------- Ctor ----------
-  constructor({
-    keyGenerator,
-    cache,
-    trustThreshold = 1,
-    stats,
-    trie,
-    mdl,
-  }: ILZSConfig = {}) {
+  constructor({ keyGenerator, cache, stats, trie, mdl }: ILZSConfig = {}) {
     this._cache = isILZSCache(cache)
       ? cache
       : new LRUCache<number, number>({ max: cache?.size ?? 10_000 });
@@ -345,8 +364,6 @@ export class LZS implements ILZS {
     this._keyGenerator = isIKeyGenerator(keyGenerator)
       ? keyGenerator
       : new RollingHash(keyGenerator);
-
-    this._trustThreshold = Math.max(1, trustThreshold);
 
     // --- MDL defaults ---
     this._mdlAlpha = mdl?.alpha ?? 0.1;
@@ -362,6 +379,10 @@ export class LZS implements ILZS {
     // Entropy scaling parameters
     this._mdlTau = mdl?.tau ?? 0.8; // entropy scaling factor
 
+    this._oneMinusBeta = 1 - this._mdlBeta;
+    this._c2 = this._mdlC * this._mdlC;
+    this._initMDLTables(512);
+
     // Monitor
     if (!stats || stats.mode === "disabled") {
       this._monitor = new NoOpMonitor();
@@ -374,7 +395,6 @@ export class LZS implements ILZS {
       this._enableMonitoring = true;
     }
 
-    this._boundHandleUnknown = this.handleUnknownCandidate.bind(this);
-    this._boundHandleUntrusted = this.handleUntrustedCandidate.bind(this);
+    this._handleUnknownCandidate = this.handleUnknownCandidate.bind(this);
   }
 }

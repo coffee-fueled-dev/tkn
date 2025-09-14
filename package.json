@@ -12,11 +12,11 @@
     "context": "bun run --filter @tkn/scripts context",
     "corpus:tinystories": "bun run --filter @tkn/corpora corpus:tinystories",
     "corpus:brown": "bun run --filter @tkn/corpora corpus:brown",
-    "corpus:multilingual": "bun run --filter @tkn/corpora corpus:multilingual",
-    "eval:english-small": "bun run --elide-lines 0 --filter @tkn/evals eval:english-small",
-    "eval:english-medium": "bun run --elide-lines 0 --filter @tkn/evals eval:english-medium",
-    "eval:cross-lingual": "bun run --elide-lines 0 --filter @tkn/evals eval:cross-lingual",
-    "eval:performance": "bun run --elide-lines 0 --filter @tkn/evals eval:performance"
+    "corpus:multi": "bun run --filter @tkn/corpora corpus:multilingual",
+    "eval:engsm": "bun run --elide-lines 0 --filter @tkn/evals eval:english-small",
+    "eval:engmd": "bun run --elide-lines 0 --filter @tkn/evals eval:english-medium",
+    "eval:cross": "bun run --elide-lines 0 --filter @tkn/evals eval:cross-lingual",
+    "eval:perf": "bun run --elide-lines 0 --filter @tkn/evals eval:performance"
   },
   "devDependencies": {
     "@types/bun": "latest"

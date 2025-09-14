@@ -7,8 +7,6 @@ import type { ILZMonitorConfig, ILZSMonitor, IStats } from "./monitor";
 export interface ILZSConfig {
   keyGenerator?: IKeyGeneratorConfig | IKeyGenerator;
   cache?: ILZSCacheConfig | ILZSCache;
-  // The number of cache hits required to trust a pattern
-  trustThreshold?: number;
   stats?: {
     mode?: ILZMonitorConfig["mode"];
     monitor?: ILZSMonitor;
@@ -73,12 +71,6 @@ export interface ILZS {
    * Clears all internal state including cache, candidate, and metrics
    */
   clear(): void;
-
-  /**
-   * Updates the trust threshold for pattern matching
-   * @param threshold The new trust threshold
-   */
-  setTrustThreshold(threshold: number): number;
 }
 
 export interface IKeyGeneratorConfig {

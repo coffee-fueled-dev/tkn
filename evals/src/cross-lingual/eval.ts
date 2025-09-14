@@ -5,7 +5,7 @@ async function main() {
   console.log("🌍 Starting Cross-Lingual Evaluation");
   console.log(`📊 Running ${CROSS_LINGUAL_JOBS.length} language evaluations`);
 
-  const runner = new JobRunner({ logSequences: true });
+  const runner = new JobRunner({ logSequences: false });
   const results = [];
 
   for (const jobConfig of CROSS_LINGUAL_JOBS) {

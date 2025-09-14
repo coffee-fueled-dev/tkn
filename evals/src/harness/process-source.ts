@@ -64,10 +64,6 @@ export async function processSource({
 
     if (_ingest) _ingest.flush();
 
-    if (logProgress) {
-      console.log(); // New line after progress
-    }
-
     const result: ProcessResult = {
       lzsStats: _lzs.stats ?? null,
       latticeStats: _ingest?.stats ?? null,

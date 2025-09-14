@@ -9,7 +9,7 @@ async function main() {
     ingest: false,
     logSequences: false,
     logProgress: false,
-    lzs: { stats: { mode: "performance-only" } },
+    lzs: { stats: { mode: "extended" } },
   });
   const results = [];
 

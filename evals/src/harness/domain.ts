@@ -11,8 +11,8 @@ export interface Sample {
 
 export interface JobProcessMetadata {
   id: string;
-  createdAt: number; // nanosecond timestamp
-  completedAt?: number | "incomplete"; // nanosecond timestamp
+  createdAt: string; // DateTime
+  duration?: number | "incomplete"; // nanosecond timestamp
 }
 
 export interface JobConfig {
@@ -59,7 +59,6 @@ export interface SampleResult {
 export const DEFAULT_CONFIG: TrainingConfig = {
   lzs: {
     cache: { size: 70_000 },
-    trustThreshold: 1,
     stats: { mode: "extended" },
     trie: new ByteTrie(),
     mdl: {
@@ -82,6 +81,6 @@ export interface IJobRunner {
 
 export const jobProcessMetadata = (): JobProcessMetadata => ({
   id: Bun.randomUUIDv7("hex"),
-  createdAt: performance.now(),
-  completedAt: "incomplete",
+  createdAt: new Date(Date.now()).toISOString(),
+  duration: "incomplete",
 });

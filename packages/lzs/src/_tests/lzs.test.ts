@@ -9,10 +9,6 @@ describe("LZS", () => {
     lzs = new LZS({
       keyGenerator: new RollingHash(),
       cache: { size: 100 },
-      trustThreshold: 1,
-      trieSearch: {
-        mode: "enabled",
-      },
       mdl: {
         alpha: 0.1,
         zMode: "child-degree",
@@ -46,7 +42,6 @@ test("clear() should reset the state", () => {
   const lzs = new LZS({
     keyGenerator: new RollingHash(),
     cache: {},
-    trustThreshold: 1,
   });
   lzs.processByte(1);
   lzs.processByte(2);

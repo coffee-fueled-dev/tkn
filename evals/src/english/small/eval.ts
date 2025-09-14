@@ -5,7 +5,7 @@ async function main() {
   console.log("🌍 Starting English - Small Corpus Evaluation");
   console.log(`📊 Running ${ENGLISH_SMALL_JOBS.length} language evaluations`);
 
-  const runner = new JobRunner({ logSequences: true });
+  const runner = new JobRunner({ logSequences: false });
   const results = [];
 
   for (const jobConfig of ENGLISH_SMALL_JOBS) {
@@ -20,7 +20,7 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify(results, null, 2));
+  console.log(JSON.stringify(results[0].training, null, 2));
 }
 
 main().catch(console.error);

@@ -44,7 +44,7 @@ export class JobRunner implements IJobRunner {
     const source = await this.normalizeSource(config.source);
 
     // Pass the configs down to processSource - it will handle instance creation
-    const trainingResult = await processSource({
+    const { ingest, ...trainingResult } = await processSource({
       source,
       ...mergedConfig,
     });
@@ -56,7 +56,7 @@ export class JobRunner implements IJobRunner {
       return {
         training: trainingResult,
         metadata: config.metadata,
-        process: { ...config.process, completedAt: performance.now() },
+        process: { ...config.process, duration: performance.now() },
       };
     }
 
@@ -73,10 +73,12 @@ export class JobRunner implements IJobRunner {
     const sampleResults = await this.evaluateSamples(
       config.sampleConfig.samples,
       config.sampleConfig,
-      trainingResult.ingest?.lattice
+      ingest?.lattice
     );
 
-    console.log(`✨ Job complete\n${config.metadata ?? ""}`);
+    console.log(
+      `✨ Job complete\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
+    );
 
     const avgTokensPerSample =
       sampleResults.reduce((sum, r) => sum + r.tokens.length, 0) /
@@ -90,7 +92,7 @@ export class JobRunner implements IJobRunner {
         total: sampleResults.length,
         avgTokensPerSample,
       },
-      process: { ...config.process, completedAt: performance.now() },
+      process: { ...config.process, duration: performance.now() },
     };
   }
 
