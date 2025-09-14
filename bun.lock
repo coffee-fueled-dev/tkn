@@ -7,6 +7,15 @@
         "@types/bun": "latest",
       },
     },
+    "evals": {
+      "name": "@tkn/evals",
+      "version": "0.1.0-beta.0",
+      "dependencies": {
+        "@tkn/lzs": "workspace:*",
+        "@tkn/serializers": "workspace:*",
+        "@tkn/tokenizer": "workspace:*",
+      },
+    },
     "packages/lzs": {
       "name": "@tkn/lzs",
       "version": "0.1.0-beta.0",
@@ -27,23 +36,6 @@
       "dependencies": {
         "@tkn/serializers": "workspace:*",
         "kuzu": "^0.11.2",
-        "queue": "^7.0.0",
-      },
-    },
-    "studies/shared": {
-      "name": "@tkn/studies-shared",
-      "version": "0.1.0-beta.0",
-    },
-    "studies/tokenizer-training": {
-      "name": "@tkn/studies-tokenizer-training",
-      "version": "0.1.0-beta.0",
-      "dependencies": {
-        "@tkn/lzs": "workspace:*",
-        "@tkn/serializers": "workspace:*",
-        "@tkn/studies-shared": "workspace:*",
-        "@tkn/tokenizer": "workspace:*",
-        "kuzu": "^0.11.2",
-        "lru-cache": "^11.2.1",
         "queue": "^7.0.0",
       },
     },
@@ -74,15 +66,13 @@
 
     "@tkn/corpora": ["@tkn/corpora@workspace:tools/corpora"],
 
+    "@tkn/evals": ["@tkn/evals@workspace:evals"],
+
     "@tkn/lzs": ["@tkn/lzs@workspace:packages/lzs"],
 
     "@tkn/scripts": ["@tkn/scripts@workspace:tools/scripts"],
 
     "@tkn/serializers": ["@tkn/serializers@workspace:packages/serializers"],
-
-    "@tkn/studies-shared": ["@tkn/studies-shared@workspace:studies/shared"],
-
-    "@tkn/studies-tokenizer-training": ["@tkn/studies-tokenizer-training@workspace:studies/tokenizer-training"],
 
     "@tkn/tokenizer": ["@tkn/tokenizer@workspace:packages/tokenizer"],
 
@@ -201,8 +191,6 @@
     "kuzu": ["kuzu@0.11.2", "", { "dependencies": { "cmake-js": "^7.3.0", "node-addon-api": "^6.0.0" } }, "sha512-4DrhdfjxImGqtfuQBhPuptQBQ6OT8G/n/cdpj7etgNJ7XeT6SeMGdo4duMvsSATRommzhTxeLwm7FHUIiYTjhg=="],
 
     "lie": ["lie@3.3.0", "", { "dependencies": { "immediate": "~3.0.5" } }, "sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ=="],
-
-    "lru-cache": ["lru-cache@11.2.1", "", {}, "sha512-r8LA6i4LP4EeWOhqBaZZjDWwehd1xUJPCJd9Sv300H0ZmcUER4+JPh7bqqZeqs1o5pgtgvXm+d9UGrB5zZGDiQ=="],
 
     "math-intrinsics": ["math-intrinsics@1.1.0", "", {}, "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="],
 

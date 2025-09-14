@@ -1,5 +1,5 @@
 {
-  "name": "@tkn/studies-tokenizer-training",
+  "name": "@tkn/evals",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
@@ -19,10 +19,6 @@
   "dependencies": {
     "@tkn/tokenizer": "workspace:*",
     "@tkn/lzs": "workspace:*",
-    "@tkn/serializers": "workspace:*",
-    "@tkn/studies-shared": "workspace:*",
-    "kuzu": "^0.11.2",
-    "lru-cache": "^11.2.1",
-    "queue": "^7.0.0"
+    "@tkn/serializers": "workspace:*"
   }
 }
