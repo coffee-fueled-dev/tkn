@@ -1,12 +1,17 @@
 import { LRUCache } from "lru-cache";
-import type {
-  ILZS,
-  ILZSConfig,
-  IFlushResult,
-  IKeyGenerator,
-  ILZSCache,
+import {
+  type IFlushResult,
+  type ILZS,
+  type ILZSConfig,
+  type ILZSCache,
+  type ILZSCacheConfig,
+  type IKeyGenerator,
+  type IKeyGeneratorConfig,
+  isILZSCache,
+  isIKeyGenerator,
 } from "./domain";
 import { ByteTrie, NoOpByteTrie, type IByteTrie } from "./byte-trie";
+import { RollingHash } from "@tkn/serializers";
 import {
   LZSMonitor,
   NoOpMonitor,
@@ -20,6 +25,23 @@ import {
  * - O(1) emission by marking parent terminal via trie.insertPreviousOrMark()
  */
 export class LZS implements ILZS {
+  // --- MDL params ---
+  private readonly _mdlAlpha: number; // α (Laplace smoothing)
+  private readonly _mdlZMode: "child-degree" | "fixed";
+  private readonly _mdlZFixed: number; // only used when mode === "fixed"
+
+  // EWMA relative surprise state
+  private readonly _mdlBeta: number; // EWMA decay rate
+  private readonly _mdlC: number; // surprise tolerance factor
+  private _mdlMean: number; // EWMA mean of surprisal
+  private _mdlVar: number; // EWMA variance of surprisal
+
+  // Entropy scaling
+  private readonly _mdlTau: number; // entropy scaling factor
+
+  // Keep track of the *previous* candidate key (for p(next|prev))
+  private _lastCandidateKey: number | null = null;
+
   private _trustThreshold: number;
   private _monitor: ILZSMonitor;
   private _enableMonitoring: boolean;
@@ -55,6 +77,9 @@ export class LZS implements ILZS {
       this.monitorNull();
 
       if (this._enableTrieSearch) this._trie.cursorInitFirst(byte);
+
+      // After first byte, previous-key is undefined; set lastCandidateKey= current
+      this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
     }
 
@@ -66,25 +91,83 @@ export class LZS implements ILZS {
       this._trie.cursorAdvance(byte, this._trieRootFallback);
     }
 
-    // ----- Trusted fast path -----
-    if (strength >= this._trustThreshold) {
-      this.monitorExtension();
-      this._cache.set(candidateKey, strength + 1);
-      return null;
+    // Always maintain counts
+    this._cache.set(candidateKey, strength + 1);
+
+    // === Adaptive MDL gate (EWMA + entropy scaling) ===
+    // Use previous candidate key (candidate *before* appending `byte`)
+    const prevKey = this._getPrevKey(); // MDL <<<
+    if (prevKey !== null) {
+      const prevCount = this._getPrevCount(prevKey); // count(prev)
+      const candCount = this._cache.get(candidateKey) ?? 0; // count(prev+byte)
+      const Z =
+        this._mdlZMode === "child-degree"
+          ? Math.max(
+              1,
+              this._enableTrieSearch ? this._trie.childDegreeAtParent() : 256
+            )
+          : Math.max(1, this._mdlZFixed);
+
+      // p(next|prev) with Laplace smoothing
+      const numer = candCount + this._mdlAlpha;
+      const denom = prevCount + this._mdlAlpha * Z;
+      let p = denom > 0 ? numer / denom : 1 / Z; // fallback if denom==0
+      if (!(p > 0)) p = Number.EPSILON;
+
+      const s = -Math.log(p); // surprisal in nats
+
+      // EWMA relative surprise gate (#1)
+      const mPrev = this._mdlMean;
+      this._mdlMean = (1 - this._mdlBeta) * this._mdlMean + this._mdlBeta * s;
+      const d = s - mPrev;
+      this._mdlVar =
+        (1 - this._mdlBeta) * this._mdlVar + this._mdlBeta * (d * d);
+      const sigma = Math.sqrt(Math.max(this._mdlVar, 1e-12));
+
+      this.monitorMDLChecked(s, this._mdlMean, sigma); // MDL counters
+
+      // Local entropy scaling gate (#2)
+      const H_local = this._computeLocalEntropy();
+
+      // Combined decision: both gates must pass
+      const passRelative = s <= this._mdlMean - this._mdlC * sigma;
+      const passEntropy = s <= this._mdlTau * H_local;
+
+      if (passRelative && passEntropy) {
+        this.monitorMDLExtended();
+        // Treat as an extension fast-path
+        this.monitorExtension();
+        // Update rolling "previous key" to the *current* candidate key
+        this._lastCandidateKey = candidateKey; // MDL <<<
+        return null;
+      }
+      // else: let normal logic decide (it will likely emit)
     }
 
-    // ----- Unknown / Untrusted slow path -----
-    this._cache.set(candidateKey, strength + 1);
+    // ---- Legacy trusted fast path (optional). You can keep or remove. ----
+    if (strength >= this._trustThreshold) {
+      this.monitorExtension();
+      // previous key becomes current
+      this._lastCandidateKey = candidateKey; // MDL <<<
+      return null;
+    }
 
     // If trie says current candidate is a valid prefix, defer emission
     if (this._enableTrieSearch && this._trie.cursorValid()) {
       this.monitorTrieHit();
+      this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
     }
 
     // Otherwise emit previous
-    if (strength === 0) return this._boundHandleUnknown(this._candidate);
-    return this._boundHandleUntrusted(this._candidate, strength);
+    if (strength === 0) {
+      const emitted = this._boundHandleUnknown(this._candidate);
+      this.monitorMDLEmitted(); // MDL <<<
+      return emitted;
+    }
+    const emitted = this._boundHandleUntrusted(this._candidate, strength);
+    this.monitorMDLEmitted(); // MDL <<<
+    return emitted;
   }
 
   // ---------- Emit handlers (O(1) on trie) ----------
@@ -105,6 +188,10 @@ export class LZS implements ILZS {
       // Re-seed cursor for the single-byte candidate
       this._trie.resetToSingleByte(lastByte);
     }
+
+    // After an emission, we no longer know the key for the *new* 1-byte candidate
+    // until the next update(byte) happens, so clear lastCandidateKey.
+    this._lastCandidateKey = null; // MDL <<<
 
     return previous;
   }
@@ -127,7 +214,32 @@ export class LZS implements ILZS {
       this._trie.resetToSingleByte(lastByte);
     }
 
+    this._lastCandidateKey = null; // MDL <<<
     return previous;
+  }
+
+  // ---------- MDL helpers ----------
+  private _getPrevKey(): number | null {
+    return this._lastCandidateKey; // candidate key before appending current byte
+  }
+  private _getPrevCount(prevKey: number): number {
+    return this._cache.get(prevKey) ?? 0;
+  }
+
+  // Compute local continuation entropy from trie children
+  private _computeLocalEntropy(): number {
+    if (!this._enableTrieSearch) {
+      return Math.log(this._mdlZFixed); // fallback to fixed alphabet entropy
+    }
+
+    const childDegree = this._trie.childDegreeAtParent();
+    if (childDegree <= 1) {
+      return 0; // no branching = no entropy
+    }
+
+    // Approximate uniform distribution over observed children
+    // In practice, you could maintain actual child weights, but this is simpler
+    return Math.log(childDegree);
   }
 
   // ---------- Monitor helpers ----------
@@ -137,10 +249,12 @@ export class LZS implements ILZS {
     this._monitor.increment("bytesIn");
   }
   private monitorNull() {
-    if (this._enableMonitoring) this._monitor.increment("timesNull");
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("timesNull");
   }
   private monitorExtension() {
-    if (this._enableMonitoring) this._monitor.increment("timesExtended");
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("timesExtended");
   }
   private monitorTrieHit() {
     if (!this._enableMonitoring) return;
@@ -152,25 +266,40 @@ export class LZS implements ILZS {
     this._monitor.increment("bytesOut", previous.length);
     this._monitor.increment("oppUnknown");
 
-    if (this._enableTrieSearch) {
-      const deg = this._trie.childDegreeAtParent();
-      if (deg > 0) this._monitor.increment("hadLongerUnknown");
-      this._monitor.increment("childDegreeSumUnknown", deg);
-    }
+    if (!this._enableTrieSearch) return;
+    const deg = this._trie.childDegreeAtParent();
+    if (deg > 0) this._monitor.increment("hadLongerUnknown");
+    this._monitor.increment("childDegreeSumUnknown", deg);
   }
   private monitorUntrustedBranch(previous: number[]) {
     if (!this._enableMonitoring) return;
     this._monitor.increment("bytesOut", previous.length);
     this._monitor.increment("oppUntrusted");
 
-    if (this._enableTrieSearch) {
-      const deg = this._trie.childDegreeAtParent();
-      if (deg > 0) this._monitor.increment("hadLongerUntrusted");
-      this._monitor.increment("childDegreeSumUntrusted", deg);
-    }
+    if (!this._enableTrieSearch) return;
+    const deg = this._trie.childDegreeAtParent();
+    if (deg > 0) this._monitor.increment("hadLongerUntrusted");
+    this._monitor.increment("childDegreeSumUntrusted", deg);
   }
 
-  // ---------- Public API ----------
+  // ---------- Monitor additions for MDL ----------
+  private monitorMDLChecked(negLogP: number, mean: number, std: number) {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlChecked");
+    this._monitor.increment("mdlSumLogP", negLogP);
+    this._monitor.increment("mdlBaselineMeanSum", mean);
+    this._monitor.increment("mdlBaselineStdSum", std);
+  }
+  private monitorMDLExtended() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlExtended");
+  }
+  private monitorMDLEmitted() {
+    if (!this._enableMonitoring) return;
+    this._monitor.increment("mdlEmitted");
+  }
+
+  // ---------- Management API ----------
   flush(): IFlushResult {
     return {
       cache: this._cache,
@@ -202,6 +331,11 @@ export class LZS implements ILZS {
     this._keyGenerator.reset();
     this._monitor.reset();
     if (this._enableTrieSearch) this._trie.cursorReset();
+
+    // Reset EWMA state
+    this._mdlMean = Math.log(this._mdlZFixed);
+    this._mdlVar = 1.0;
+    this._lastCandidateKey = null;
   }
 
   get stats(): IStats | null {
@@ -215,11 +349,11 @@ export class LZS implements ILZS {
     trustThreshold = 1,
     stats,
     trieSearch,
-  }: ILZSConfig) {
-    // Cache
-    this._cache =
-      cache.strategy ??
-      new LRUCache<number, number>({ max: cache.size ?? 10_000 });
+    mdl,
+  }: ILZSConfig = {}) {
+    this._cache = isILZSCache(cache)
+      ? cache
+      : new LRUCache<number, number>({ max: cache?.size ?? 10_000 });
 
     // Trie
     if (trieSearch?.trie) {
@@ -238,9 +372,25 @@ export class LZS implements ILZS {
       }
     }
 
-    // Trust
-    this._keyGenerator = keyGenerator;
+    this._keyGenerator = isIKeyGenerator(keyGenerator)
+      ? keyGenerator
+      : new RollingHash(keyGenerator);
+
     this._trustThreshold = Math.max(1, trustThreshold);
+
+    // --- MDL defaults ---
+    this._mdlAlpha = mdl?.alpha ?? 0.1;
+    this._mdlZMode = mdl?.zMode ?? "child-degree";
+    this._mdlZFixed = mdl?.zFixed ?? 256;
+
+    // EWMA relative surprise parameters
+    this._mdlBeta = mdl?.beta ?? 0.02; // decay rate (half-life ~35 steps)
+    this._mdlC = mdl?.c ?? 0.7; // surprise tolerance factor
+    this._mdlMean = Math.log(this._mdlZFixed); // initialize to uniform surprise
+    this._mdlVar = 1.0; // initialize with some variance
+
+    // Entropy scaling parameters
+    this._mdlTau = mdl?.tau ?? 0.8; // entropy scaling factor
 
     // Monitor
     if (stats?.monitor) {

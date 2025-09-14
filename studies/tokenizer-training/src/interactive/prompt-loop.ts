@@ -2,7 +2,7 @@ import { Lattice, Tokenizer } from "@tkn/tokenizer";
 import * as readline from "readline";
 
 export function promptLoop(lattice: Lattice) {
-  const tokenizer = new Tokenizer(lattice);
+  const tokenizer = new Tokenizer({ lattice });
 
   console.log("\n=== Interactive Tokenizer ===");
   console.log("Enter text to tokenize (or 'quit' to exit):");

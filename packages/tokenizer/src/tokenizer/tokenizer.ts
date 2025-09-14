@@ -1,6 +1,6 @@
 import { LRUCache } from "lru-cache";
-import { Hex } from "@tkn/serializers";
-import type { Lattice } from "../lattice";
+import { Hex, UnicodeReader } from "@tkn/serializers";
+import { Lattice, type ILatticeConfig } from "../lattice";
 
 const LOG_EPS = Math.log(1e-9);
 
@@ -19,6 +19,10 @@ export type PerplexityResult = {
   sumLog: number;
 };
 
+export interface ITokenizerConfig {
+  lattice?: ILatticeConfig | Lattice;
+}
+
 export class Tokenizer {
   private _lattice: Lattice;
   private _D = 0.75; // Kneser-Ney discount parameter
@@ -31,25 +35,32 @@ export class Tokenizer {
   private _prefixLRU = new LRUCache<string, string[]>({ max: 512 });
   private _globalDistinctCache?: number;
 
-  constructor(lattice: Lattice) {
-    this._lattice = lattice;
+  constructor({ lattice }: ITokenizerConfig) {
+    if (lattice) {
+      this._lattice =
+        lattice instanceof Lattice ? lattice : new Lattice(lattice);
+    } else {
+      this._lattice = new Lattice({});
+    }
   }
 
-  private keyForBytes(bytes: number[]): string {
+  private keyForCodepoints(codepoints: number[]): string {
     // cheap key for prefix-LRU; you can cap for very long inputs if desired
-    return bytes.join(",");
+    return codepoints.join(",");
   }
 
   /** Return candidate tokens as escapedHex strings (LRU-cached). */
-  private findPrefixTokensEsc(inputBytes: number[]): string[] {
-    const lruKey = this.keyForBytes(inputBytes);
+  private findPrefixTokensEsc(inputCodepoints: number[]): string[] {
+    const lruKey = this.keyForCodepoints(inputCodepoints);
     const cached = this._prefixLRU.get(lruKey);
     if (cached) return cached;
 
-    const esc = Hex.fromBytes(inputBytes);
+    // Convert codepoints to UTF-8 bytes, then to hex for lattice lookup
+    const utf8Bytes = UnicodeReader.codepointsToUtf8Bytes(inputCodepoints);
+    const esc = Hex.fromBytes(utf8Bytes);
     const tokens = this._lattice.prefixSearch(esc).map((r) => r.bytes);
 
-    // fallback: single byte token => first 4 chars, e.g. "\\xBC"
+    // fallback: single codepoint token
     const out = tokens.length ? tokens : [esc.slice(0, 4)];
     this._prefixLRU.set(lruKey, out);
     return out;
@@ -154,7 +165,7 @@ export class Tokenizer {
     };
   }
 
-  /** Get hex bytes from token ID */
+  /** Get UTF-8 bytes from token ID */
   getTokenBytes(tokenId: number): number[] | null {
     const token = this._lattice.getTokenById(tokenId);
     return token ? Hex.toBytes(token.bytes) : null;
@@ -162,19 +173,19 @@ export class Tokenizer {
 
   /** Viterbi over escapedHex tokens. */
   decode(input: string): number[] {
-    const textEncoder = new TextEncoder();
-    const bytes = [...textEncoder.encode(input)];
+    // Convert input to Unicode codepoints for consistency with LZS processing
+    const codepoints = UnicodeReader.stringToCodepoints(input);
     // dp[i] = best log prob up to i
     // back[i] = [prevIndex, tokenEsc]
     const dp = new Map<number, number>();
     const back = new Map<number, [number, string]>();
     dp.set(0, 0);
 
-    for (let i = 0; i < bytes.length; i++) {
+    for (let i = 0; i < codepoints.length; i++) {
       const prevProb = dp.get(i);
       if (prevProb === undefined) continue;
 
-      const slice = bytes.slice(i);
+      const slice = codepoints.slice(i);
       const candidatesEsc = this.findPrefixTokensEsc(slice);
 
       const prevEntry = back.get(i);
@@ -189,8 +200,12 @@ export class Tokenizer {
       }
 
       for (const tokEsc of candidatesEsc) {
-        const tokenLenBytes = tokEsc.length / 4; // each byte renders as 4 chars: \xHH
-        const nextIndex = i + tokenLenBytes;
+        // Convert token hex back to UTF-8 bytes, then to codepoints to get length
+        const utf8Bytes = Hex.toBytes(tokEsc);
+        const text = new TextDecoder().decode(new Uint8Array(utf8Bytes));
+        const tokenLenCodepoints =
+          UnicodeReader.stringToCodepoints(text).length;
+        const nextIndex = i + tokenLenCodepoints;
 
         let logP = 0; // baseline for first token
         if (prevTokenEsc) {
@@ -209,10 +224,11 @@ export class Tokenizer {
 
     // reconstruct best path (fallback to farthest reachable index if needed)
     const out: number[] = [];
-    let idx = bytes.length;
+    let idx = codepoints.length;
     if (!back.has(idx)) {
       let best = -1;
-      for (const k of back.keys()) if (k > best && k <= bytes.length) best = k;
+      for (const k of back.keys())
+        if (k > best && k <= codepoints.length) best = k;
       if (best > 0) idx = best;
     }
     while (idx > 0 && back.has(idx)) {
@@ -228,11 +244,14 @@ export class Tokenizer {
   }
 
   toStrings(tokenIds: number[]): string[] {
-    const textDecoder = new TextDecoder();
-    return tokenIds.map((id) =>
-      textDecoder.decode(
-        new Uint8Array(Hex.toBytes(this._lattice.getTokenById(id)?.bytes!))
-      )
-    );
+    return tokenIds.map((id) => {
+      const tokenBytes = this._lattice.getTokenById(id)?.bytes;
+      if (!tokenBytes) return "";
+
+      // Convert hex -> UTF-8 bytes -> string (consistent with codepoint approach)
+      const utf8Bytes = Hex.toBytes(tokenBytes);
+      const textDecoder = new TextDecoder();
+      return textDecoder.decode(new Uint8Array(utf8Bytes));
+    });
   }
 }

@@ -20,6 +20,14 @@ export interface IStats {
   avgChildDegreeUnknown: number;
   avgChildDegreeUntrusted: number;
   rateMBs: number;
+  // MDL statistics
+  mdlChecked: number;
+  mdlExtended: number;
+  mdlEmitted: number;
+  avgMDLLogP: number;
+  // EWMA baseline tracking
+  mdlBaselineMean: number;
+  mdlBaselineStd: number;
 }
 
 /**
@@ -36,7 +44,13 @@ export type CounterType =
   | "hadLongerUnknown"
   | "hadLongerUntrusted"
   | "childDegreeSumUnknown"
-  | "childDegreeSumUntrusted";
+  | "childDegreeSumUntrusted"
+  | "mdlChecked"
+  | "mdlExtended"
+  | "mdlEmitted"
+  | "mdlSumLogP"
+  | "mdlBaselineMeanSum"
+  | "mdlBaselineStdSum";
 
 /**
  * Interface for performance monitoring with async counter updates
@@ -99,6 +113,12 @@ export class LZSMonitor implements ILZSMonitor {
     hadLongerUntrusted: 0,
     childDegreeSumUnknown: 0,
     childDegreeSumUntrusted: 0,
+    mdlChecked: 0,
+    mdlExtended: 0,
+    mdlEmitted: 0,
+    mdlSumLogP: 0,
+    mdlBaselineMeanSum: 0,
+    mdlBaselineStdSum: 0,
   };
 
   // Batched pending updates
@@ -114,6 +134,12 @@ export class LZSMonitor implements ILZSMonitor {
     hadLongerUntrusted: 0,
     childDegreeSumUnknown: 0,
     childDegreeSumUntrusted: 0,
+    mdlChecked: 0,
+    mdlExtended: 0,
+    mdlEmitted: 0,
+    mdlSumLogP: 0,
+    mdlBaselineMeanSum: 0,
+    mdlBaselineStdSum: 0,
   };
 
   private _batchSize: number;
@@ -229,6 +255,21 @@ export class LZSMonitor implements ILZSMonitor {
         : 0,
 
       rateMBs: (counters.bytesOut * 0.000001) / (durationMS / 1000),
+
+      // MDL statistics
+      mdlChecked: counters.mdlChecked,
+      mdlExtended: counters.mdlExtended,
+      mdlEmitted: counters.mdlEmitted,
+      avgMDLLogP: counters.mdlChecked
+        ? counters.mdlSumLogP / counters.mdlChecked
+        : 0,
+      // EWMA baseline tracking
+      mdlBaselineMean: counters.mdlChecked
+        ? counters.mdlBaselineMeanSum / counters.mdlChecked
+        : 0,
+      mdlBaselineStd: counters.mdlChecked
+        ? counters.mdlBaselineStdSum / counters.mdlChecked
+        : 0,
     };
   }
 }
@@ -249,6 +290,12 @@ export class NoOpMonitor implements ILZSMonitor {
     hadLongerUntrusted: 0,
     childDegreeSumUnknown: 0,
     childDegreeSumUntrusted: 0,
+    mdlChecked: 0,
+    mdlExtended: 0,
+    mdlEmitted: 0,
+    mdlSumLogP: 0,
+    mdlBaselineMeanSum: 0,
+    mdlBaselineStdSum: 0,
   };
 
   increment(_counter: CounterType, _amount = 1): void {

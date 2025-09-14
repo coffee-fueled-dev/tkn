@@ -1,19 +1,35 @@
-import type { Lattice, Pair, Token } from "../lattice/lattice";
+import {
+  Lattice,
+  type ILatticeConfig,
+  type Pair,
+  type Token,
+} from "../lattice";
+
+export interface IIngestConfig {
+  batchSize?: number;
+  lattice?: ILatticeConfig | Lattice;
+  showProgress?: boolean;
+}
 
 export class Ingest {
   private _lattice: Lattice;
   private readonly _batchSize: number;
   private _tokenBuffer: string[] = [];
+  private _showProgress?: boolean;
 
-  constructor({
-    batchSize = 1000,
-    lattice,
-  }: {
-    lattice: Lattice;
-    batchSize: number;
-  }) {
-    this._lattice = lattice;
+  constructor(
+    { batchSize = 1000, lattice, showProgress = false }: IIngestConfig = {
+      batchSize: 1000,
+    }
+  ) {
+    if (lattice) {
+      this._lattice =
+        lattice instanceof Lattice ? lattice : new Lattice(lattice);
+    } else {
+      this._lattice = new Lattice({});
+    }
     this._batchSize = Math.max(1, batchSize);
+    this._showProgress = showProgress;
   }
 
   /** Buffer a token (hex string). Commits when the buffer reaches batchSize. */
@@ -46,9 +62,11 @@ export class Ingest {
       });
     }
 
-    console.log(
-      `Committing ${tokenOccurrences.length} token occurrences and ${edgeOccurrences.length} edge occurrences...`
-    );
+    if (this._showProgress) {
+      console.log(
+        `Committing ${tokenOccurrences.length} token occurrences and ${edgeOccurrences.length} edge occurrences...`
+      );
+    }
     this._lattice.batchIngest(tokenOccurrences, edgeOccurrences);
   }
 

@@ -1,83 +1,27 @@
 import { Database, Statement } from "bun:sqlite";
 import { LRUCache } from "lru-cache";
+import type {
+  P_CountPred,
+  P_GetEdge,
+  P_GetTokenByBytes,
+  P_GetTokenById,
+  P_PrefixSearch,
+  P_TransitionsFrom,
+  Pair,
+  R_CountPred,
+  R_GetEdge,
+  R_GetTokenByBytes,
+  R_GetTokenById,
+  R_LatticeStats,
+  R_PrefixSearch,
+  R_TransitionsFrom,
+  Token,
+} from "./schema";
+import { createSchema } from "./schema";
 
-export type Pair = {
-  from: string;
-  to: string;
-  weight: number;
-};
-
-export type Token = {
-  id: number;
-  bytes: string; // hex
-  degree: number;
-  strength: number;
-};
-
-// ---- Query parameter & result types ----
-type P_GetEdge = { $from: string; $to: string };
-type R_GetEdge = { strength: number; degree: number; match: number | null };
-
-type P_CountPred = { $to: string };
-type R_CountPred = { n_predecessors: number | null };
-
-type P_PrefixSearch = { $esc: string };
-type R_PrefixSearch = { bytes: string };
-
-type P_TransitionsFrom = { $from: string };
-type R_TransitionsFrom = { bytes: string; weight: number };
-
-type P_GetTokenByBytes = { $bytes: string };
-type R_GetTokenByBytes = {
-  id: number;
-  bytes: string;
-  degree: number;
-  strength: number;
-};
-
-type P_GetTokenById = { $id: number };
-type R_GetTokenById = {
-  id: number;
-  bytes: string;
-  degree: number;
-  strength: number;
-};
-
-type R_LatticeStats = {
-  // Vocabulary statistics
-  total_tokens: number;
-
-  // Token metrics
-  avg_token_strength: number;
-  max_token_strength: number;
-  min_token_strength: number;
-  median_token_strength: number;
-
-  avg_token_degree: number;
-  max_token_degree: number;
-  min_token_degree: number;
-  median_token_degree: number;
-
-  // Edge statistics
-  total_edges: number;
-  avg_edge_weight: number;
-  max_edge_weight: number;
-  min_edge_weight: number;
-  median_edge_weight: number;
-
-  // Connectivity analysis
-  isolated_tokens: number;
-  tokens_with_outgoing: number;
-  tokens_with_incoming: number;
-
-  // Distribution percentiles
-  strength_p95: number;
-  strength_p99: number;
-  degree_p95: number;
-  degree_p99: number;
-  weight_p95: number;
-  weight_p99: number;
-};
+export interface ILatticeConfig {
+  database?: { instance?: Database; path?: string };
+}
 
 /**
  * Lattice provides a graph-based token storage and retrieval system.
@@ -99,243 +43,50 @@ export class Lattice {
   private _tokenByIdCache = new LRUCache<number, R_GetTokenById>({ max: 1000 });
 
   // Read-only prepared statements (used by tokenizer)
-  private readonly _stmtGetEdge!: Statement<R_GetEdge, [P_GetEdge]>;
-  private readonly _stmtCountPredecessors!: Statement<
+  private readonly _stmtGetEdge: Statement<R_GetEdge, [P_GetEdge]>;
+  private readonly _stmtCountPredecessors: Statement<
     R_CountPred,
     [P_CountPred]
   >;
-  private readonly _stmtPrefixSearch!: Statement<
+  private readonly _stmtPrefixSearch: Statement<
     R_PrefixSearch,
     [P_PrefixSearch]
   >;
-  private readonly _stmtTransitionsFrom!: Statement<
+  private readonly _stmtTransitionsFrom: Statement<
     R_TransitionsFrom,
     [P_TransitionsFrom]
   >;
-  private readonly _stmtGetTokenByBytes!: Statement<
+  private readonly _stmtGetTokenByBytes: Statement<
     R_GetTokenByBytes,
     [P_GetTokenByBytes]
   >;
-  private readonly _stmtGetTokenById!: Statement<
+  private readonly _stmtGetTokenById: Statement<
     R_GetTokenById,
     [P_GetTokenById]
   >;
 
   // Write operation prepared statements
-  private readonly _stmtUpdateTokenDegrees!: Statement;
+  private readonly _stmtUpdateTokenDegrees: Statement;
 
   // Statistical analysis prepared statement
-  private readonly _stmtGetLatticeStats!: Statement<R_LatticeStats, []>;
+  private readonly _stmtGetLatticeStats: Statement<R_LatticeStats, []>;
 
-  constructor({
-    database,
-  }: {
-    database?: { instance?: Database; path?: string };
-  }) {
+  constructor({ database }: ILatticeConfig = {}) {
     this._db =
       database?.instance ??
       new Database(database?.path ?? ":memory:", {
         safeIntegers: false,
       });
 
-    // Pragmas: optimized for maximum write throughput
-    this._db.run("PRAGMA journal_mode = WAL;");
-    this._db.run("PRAGMA synchronous = OFF;"); // Faster writes, less durability
-    this._db.run("PRAGMA foreign_keys = OFF;"); // Skip FK checks during bulk insert
-    this._db.run("PRAGMA cache_size = -64000;"); // 64MB cache
-    this._db.run("PRAGMA temp_store = MEMORY;"); // Keep temp data in memory
-
-    // ---------- Schema ----------
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS Token (
-        id        INTEGER PRIMARY KEY AUTOINCREMENT,
-        bytes     TEXT UNIQUE NOT NULL,
-        degree    INTEGER NOT NULL DEFAULT 0,
-        strength  INTEGER NOT NULL DEFAULT 0
-      );
-    `);
-
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS Edge (
-        from_bytes TEXT NOT NULL,
-        to_bytes   TEXT NOT NULL,
-        weight     INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY (from_bytes, to_bytes),
-        FOREIGN KEY (from_bytes) REFERENCES Token(bytes) ON DELETE CASCADE,
-        FOREIGN KEY (to_bytes)   REFERENCES Token(bytes) ON DELETE CASCADE
-      );
-    `);
-
-    this._db.run(`
-      CREATE VIEW IF NOT EXISTS v_edge_predecessors AS
-      SELECT
-        to_bytes,
-        COUNT(DISTINCT from_bytes) AS n_predecessors
-      FROM Edge
-      WHERE weight > 0
-      GROUP BY to_bytes;
-    `);
-
-    this._db.run(`
-      CREATE VIEW IF NOT EXISTS v_edge_stats AS
-      SELECT COUNT(*) AS n_bigrams
-      FROM Edge
-      WHERE weight > 0;
-    `);
-
-    // ---------- Indexes ----------
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_token_bytes ON Token(bytes);`);
-    this._db.run(
-      `CREATE INDEX IF NOT EXISTS idx_edge_from_to ON Edge(from_bytes, to_bytes);`
-    );
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_edge_to ON Edge(to_bytes);`);
-
-    // ---------- Read-only prepared statements ----------
-    this._stmtGetEdge = this._db.query<R_GetEdge, [P_GetEdge]>(`
-      SELECT
-        t.strength AS strength,    -- c
-        t.degree   AS degree,      -- T
-        b.weight   AS match        -- r
-      FROM Token t
-      LEFT JOIN Edge b
-        ON b.from_bytes = t.bytes
-       AND b.to_bytes   = $to
-      WHERE t.bytes = $from;
-    `);
-
-    this._stmtCountPredecessors = this._db.query<R_CountPred, [P_CountPred]>(`
-      SELECT n_predecessors
-      FROM v_edge_predecessors
-      WHERE to_bytes = $to;
-    `);
-
-    this._stmtPrefixSearch = this._db.query<R_PrefixSearch, [P_PrefixSearch]>(`
-      SELECT bytes
-      FROM Token
-      WHERE bytes = substr($esc, 1, length(bytes))
-      ORDER BY length(bytes) DESC
-    `);
-
-    this._stmtTransitionsFrom = this._db.query<
-      R_TransitionsFrom,
-      [P_TransitionsFrom]
-    >(`
-      SELECT to_bytes AS bytes, weight
-      FROM Edge
-      WHERE from_bytes = $from
-    `);
-
-    this._stmtGetTokenByBytes = this._db.query<
-      R_GetTokenByBytes,
-      [P_GetTokenByBytes]
-    >(`
-      SELECT id, bytes, degree, strength
-      FROM Token
-      WHERE bytes = $bytes
-    `);
-
-    this._stmtGetTokenById = this._db.query<R_GetTokenById, [P_GetTokenById]>(`
-      SELECT id, bytes, degree, strength
-      FROM Token
-      WHERE id = $id
-    `);
-
-    this._stmtUpdateTokenDegrees = this._db.query(`
-      UPDATE Token 
-      SET degree = (
-        SELECT COUNT(DISTINCT to_bytes) 
-        FROM Edge 
-        WHERE Edge.from_bytes = Token.bytes AND Edge.weight > 0
-      )
-      WHERE EXISTS (
-        SELECT 1 FROM Edge WHERE Edge.from_bytes = Token.bytes
-      )
-    `);
-
-    this._stmtGetLatticeStats = this._db.query<R_LatticeStats, []>(`
-      WITH token_stats AS (
-        SELECT 
-          COUNT(*) as total_tokens,
-          COALESCE(AVG(CAST(strength AS REAL)), 0) as avg_token_strength,
-          COALESCE(MAX(strength), 0) as max_token_strength,
-          COALESCE(MIN(strength), 0) as min_token_strength,
-          COALESCE(AVG(CAST(degree AS REAL)), 0) as avg_token_degree,
-          COALESCE(MAX(degree), 0) as max_token_degree,
-          COALESCE(MIN(degree), 0) as min_token_degree
-        FROM Token
-      ),
-      edge_stats AS (
-        SELECT 
-          COUNT(*) as total_edges,
-          COALESCE(AVG(CAST(weight AS REAL)), 0) as avg_edge_weight,
-          COALESCE(MAX(weight), 0) as max_edge_weight,
-          COALESCE(MIN(weight), 0) as min_edge_weight
-        FROM Edge
-        WHERE weight > 0
-      ),
-      connectivity_stats AS (
-        SELECT
-          COUNT(CASE WHEN out_degree = 0 AND in_degree = 0 THEN 1 END) as isolated_tokens,
-          COUNT(CASE WHEN out_degree > 0 THEN 1 END) as tokens_with_outgoing,
-          COUNT(CASE WHEN in_degree > 0 THEN 1 END) as tokens_with_incoming
-        FROM (
-          SELECT 
-            t.bytes,
-            COALESCE(out_edges.out_degree, 0) as out_degree,
-            COALESCE(in_edges.in_degree, 0) as in_degree
-          FROM Token t
-          LEFT JOIN (
-            SELECT from_bytes, COUNT(*) as out_degree
-            FROM Edge WHERE weight > 0
-            GROUP BY from_bytes
-          ) out_edges ON t.bytes = out_edges.from_bytes
-          LEFT JOIN (
-            SELECT to_bytes, COUNT(*) as in_degree  
-            FROM Edge WHERE weight > 0
-            GROUP BY to_bytes
-          ) in_edges ON t.bytes = in_edges.to_bytes
-        )
-      ),
-      token_count AS (SELECT COUNT(*) as n FROM Token),
-      edge_count AS (SELECT COUNT(*) as n FROM Edge WHERE weight > 0),
-      percentiles AS (
-        SELECT
-          COALESCE((SELECT strength FROM Token ORDER BY strength LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.5 AS INTEGER)) FROM token_count)), 0) as median_token_strength,
-          COALESCE((SELECT strength FROM Token ORDER BY strength LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.95 AS INTEGER)) FROM token_count)), 0) as strength_p95,
-          COALESCE((SELECT strength FROM Token ORDER BY strength LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.99 AS INTEGER)) FROM token_count)), 0) as strength_p99,
-          COALESCE((SELECT degree FROM Token ORDER BY degree LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.5 AS INTEGER)) FROM token_count)), 0) as median_token_degree,
-          COALESCE((SELECT degree FROM Token ORDER BY degree LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.95 AS INTEGER)) FROM token_count)), 0) as degree_p95,
-          COALESCE((SELECT degree FROM Token ORDER BY degree LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.99 AS INTEGER)) FROM token_count)), 0) as degree_p99,
-          COALESCE((SELECT weight FROM Edge WHERE weight > 0 ORDER BY weight LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.5 AS INTEGER)) FROM edge_count)), 0) as median_edge_weight,
-          COALESCE((SELECT weight FROM Edge WHERE weight > 0 ORDER BY weight LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.95 AS INTEGER)) FROM edge_count)), 0) as weight_p95,
-          COALESCE((SELECT weight FROM Edge WHERE weight > 0 ORDER BY weight LIMIT 1 OFFSET (SELECT MAX(0, CAST(n * 0.99 AS INTEGER)) FROM edge_count)), 0) as weight_p99
-      )
-      SELECT 
-        ts.total_tokens,
-        ts.avg_token_strength,
-        ts.max_token_strength,
-        ts.min_token_strength,
-        p.median_token_strength,
-        ts.avg_token_degree,
-        ts.max_token_degree,
-        ts.min_token_degree,
-        p.median_token_degree,
-        es.total_edges,
-        es.avg_edge_weight,
-        es.max_edge_weight,
-        es.min_edge_weight,
-        p.median_edge_weight,
-        cs.isolated_tokens,
-        cs.tokens_with_outgoing,
-        cs.tokens_with_incoming,
-        p.strength_p95,
-        p.strength_p99,
-        p.degree_p95,
-        p.degree_p99,
-        p.weight_p95,
-        p.weight_p99
-      FROM token_stats ts, edge_stats es, connectivity_stats cs, percentiles p
-    `);
+    const statements = createSchema(this._db);
+    this._stmtGetEdge = statements.stmtGetEdge;
+    this._stmtCountPredecessors = statements.stmtCountPredecessors;
+    this._stmtPrefixSearch = statements.stmtPrefixSearch;
+    this._stmtTransitionsFrom = statements.stmtTransitionsFrom;
+    this._stmtGetTokenByBytes = statements.stmtGetTokenByBytes;
+    this._stmtGetTokenById = statements.stmtGetTokenById;
+    this._stmtUpdateTokenDegrees = statements.stmtUpdateTokenDegrees;
+    this._stmtGetLatticeStats = statements.stmtGetLatticeStats;
   }
 
   // ---- Query Methods (used by tokenizer) ----
@@ -429,9 +180,9 @@ export class Lattice {
    * Provides insights into vocabulary size, token metrics, edge statistics,
    * connectivity patterns, and distribution percentiles.
    */
-  getLatticeStats = (): R_LatticeStats | null => {
+  get stats(): R_LatticeStats | null {
     return this._stmtGetLatticeStats.get();
-  };
+  }
 
   // ---- Cache Management ----
 

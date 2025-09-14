@@ -35,7 +35,7 @@
       "version": "0.1.0-beta.0",
     },
     "studies/tokenizer-training": {
-      "name": "@tkn/studies-perplexity",
+      "name": "@tkn/studies-tokenizer-training",
       "version": "0.1.0-beta.0",
       "dependencies": {
         "@tkn/lzs": "workspace:*",
@@ -80,9 +80,9 @@
 
     "@tkn/serializers": ["@tkn/serializers@workspace:packages/serializers"],
 
-    "@tkn/studies-perplexity": ["@tkn/studies-perplexity@workspace:studies/tokenizer-training"],
-
     "@tkn/studies-shared": ["@tkn/studies-shared@workspace:studies/shared"],
+
+    "@tkn/studies-tokenizer-training": ["@tkn/studies-tokenizer-training@workspace:studies/tokenizer-training"],
 
     "@tkn/tokenizer": ["@tkn/tokenizer@workspace:packages/tokenizer"],
 

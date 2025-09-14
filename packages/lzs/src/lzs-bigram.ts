@@ -9,9 +9,9 @@ import { LZS } from "./lzs";
 export class LZSBigram extends LZS {
   private _lzsBytes: LZS;
 
-  constructor(lzsBytes: LZS, config: ILZSConfig) {
+  constructor(lzsBytes: ILZSConfig | LZS, config: ILZSConfig) {
     super(config);
-    this._lzsBytes = lzsBytes;
+    this._lzsBytes = lzsBytes instanceof LZS ? lzsBytes : new LZS(lzsBytes);
   }
 
   processByte(byte: number): number[] | null {

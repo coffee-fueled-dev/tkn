@@ -2,19 +2,11 @@ import type { IByteTrie } from "./byte-trie";
 import type { ILZSMonitor, IStats } from "./monitor";
 
 /**
- * Configuration for LZS memory management
- */
-export interface ICacheConfig {
-  strategy?: ILZSCache;
-  size?: number;
-}
-
-/**
  * Configuration interface for LZS instances
  */
 export interface ILZSConfig {
-  keyGenerator: IKeyGenerator;
-  cache: ICacheConfig;
+  keyGenerator?: IKeyGeneratorConfig | IKeyGenerator;
+  cache?: ILZSCacheConfig | ILZSCache;
   // The number of cache hits required to trust a pattern
   trustThreshold?: number;
   stats?: {
@@ -24,6 +16,16 @@ export interface ILZSConfig {
   trieSearch?: {
     mode?: "enabled" | "disabled";
     trie?: IByteTrie;
+  };
+  mdl?: {
+    alpha?: number; // default ~0.1 (Laplace smoothing)
+    zMode?: "child-degree" | "fixed"; // default "child-degree"
+    zFixed?: number; // used if zMode === "fixed" (e.g., 256)
+    // EWMA relative surprise parameters
+    beta?: number; // EWMA decay (default ~0.02)
+    c?: number; // surprise tolerance (default ~0.7)
+    // Entropy scaling parameters
+    tau?: number; // entropy scaling factor (default ~0.8)
   };
 }
 
@@ -82,6 +84,10 @@ export interface ILZS {
   setTrustThreshold(threshold: number): number;
 }
 
+export interface IKeyGeneratorConfig {
+  seed?: number;
+}
+
 /**
  * Defines the interface for a stateful hash generator that can be updated
  * incrementally.
@@ -101,6 +107,24 @@ export interface IKeyGenerator {
    * This is used when the candidate sequence is reset.
    */
   recalculate(buffer: Uint8Array | number[]): number;
+}
+
+export function isIKeyGenerator(obj: any): obj is IKeyGenerator {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.update === "function" &&
+    typeof obj.reset === "function" &&
+    typeof obj.recalculate === "function" &&
+    typeof obj.value === "number"
+  );
+}
+
+/**
+ * Configuration for LZS memory management
+ */
+export interface ILZSCacheConfig {
+  size?: number;
 }
 
 /**
@@ -134,4 +158,19 @@ export interface ILZSCache {
   size: number;
 
   values(): Generator<number, void, unknown>;
+}
+
+/**
+ * Type guards for constructor pattern
+ */
+export function isILZSCache(obj: any): obj is ILZSCache {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.get === "function" &&
+    typeof obj.set === "function" &&
+    typeof obj.clear === "function" &&
+    typeof obj.size === "number" &&
+    typeof obj.values === "function"
+  );
 }

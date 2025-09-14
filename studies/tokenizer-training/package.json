@@ -1,5 +1,5 @@
 {
-  "name": "@tkn/studies-perplexity",
+  "name": "@tkn/studies-tokenizer-training",
   "version": "0.1.0-beta.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,11 @@
       "import": "./src/index.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "eval:cross-lingual": "bun run src/cross-lingual/eval.ts",
+    "eval:english-small": "bun run src/english/small/eval.ts",
+    "eval:english-medium": "bun run src/english/medium/eval.ts"
+  },
   "devDependencies": {},
   "peerDependencies": {},
   "dependencies": {

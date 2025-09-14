@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "corpus:tinystories": "bun run src/tinystories.ts",
-    "corpus:brown": "bun run src/brown.ts"
+    "corpus:brown": "bun run src/brown.ts",
+    "corpus:multilingual": "bun run src/multilingual.ts"
   },
   "devDependencies": {
     "jszip": "^3.10.1"
