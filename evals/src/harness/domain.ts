@@ -2,6 +2,7 @@ import type { IIngestConfig, Ingest, PerplexityResult } from "@tkn/tokenizer";
 import type { ProcessResult, Source } from "./process-source";
 import type { BunFile } from "bun";
 import type { ILZSConfig, LZS } from "@tkn/lzs";
+import { ByteTrie } from "../../../packages/lzs/src/byte-trie";
 
 export interface Sample {
   content: string;
@@ -60,7 +61,7 @@ export const DEFAULT_CONFIG: TrainingConfig = {
     cache: { size: 70_000 },
     trustThreshold: 1,
     stats: { mode: "extended" },
-    trieSearch: { mode: "enabled" },
+    trie: new ByteTrie(),
     mdl: {
       alpha: 0.1,
       zMode: "child-degree",

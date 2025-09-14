@@ -13,10 +13,7 @@ export interface ILZSConfig {
     mode?: ILZMonitorConfig["mode"];
     monitor?: ILZSMonitor;
   };
-  trieSearch?: {
-    mode?: "enabled" | "disabled";
-    trie?: IByteTrie;
-  };
+  trie?: IByteTrie;
   mdl?: {
     alpha?: number; // default ~0.1 (Laplace smoothing)
     zMode?: "child-degree" | "fixed"; // default "child-degree"

@@ -46,7 +46,6 @@ export class LZS implements ILZS {
   private _monitor: ILZSMonitor;
   private _enableMonitoring: boolean;
   private _trie: IByteTrie;
-  private _enableTrieSearch: boolean;
 
   readonly _cache: ILZSCache;
   readonly _keyGenerator: IKeyGenerator;
@@ -76,7 +75,7 @@ export class LZS implements ILZS {
       this._cache.set(candidateKey, strength + 1);
       this.monitorNull();
 
-      if (this._enableTrieSearch) this._trie.cursorInitFirst(byte);
+      this._trie.cursorInitFirst(byte);
 
       // After first byte, previous-key is undefined; set lastCandidateKey= current
       this._lastCandidateKey = candidateKey; // MDL <<<
@@ -87,9 +86,7 @@ export class LZS implements ILZS {
     this._candidate.push(byte);
 
     // ----- Trie: O(1) prefix update -----
-    if (this._enableTrieSearch) {
-      this._trie.cursorAdvance(byte, this._trieRootFallback);
-    }
+    this._trie.cursorAdvance(byte, this._trieRootFallback);
 
     // Always maintain counts
     this._cache.set(candidateKey, strength + 1);
@@ -102,10 +99,7 @@ export class LZS implements ILZS {
       const candCount = this._cache.get(candidateKey) ?? 0; // count(prev+byte)
       const Z =
         this._mdlZMode === "child-degree"
-          ? Math.max(
-              1,
-              this._enableTrieSearch ? this._trie.childDegreeAtParent() : 256
-            )
+          ? Math.max(1, this._trie.childDegreeAtParent())
           : Math.max(1, this._mdlZFixed);
 
       // p(next|prev) with Laplace smoothing
@@ -153,7 +147,7 @@ export class LZS implements ILZS {
     }
 
     // If trie says current candidate is a valid prefix, defer emission
-    if (this._enableTrieSearch && this._trie.cursorValid()) {
+    if (this._trie.cursorValid()) {
       this.monitorTrieHit();
       this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
@@ -182,12 +176,10 @@ export class LZS implements ILZS {
     candidate[0] = lastByte;
     this._keyGenerator.recalculate(candidate);
 
-    if (this._enableTrieSearch) {
-      // Mark parent terminal if known, else insert walk-once
-      this._trie.insertPreviousOrMark(previous, 1);
-      // Re-seed cursor for the single-byte candidate
-      this._trie.resetToSingleByte(lastByte);
-    }
+    // Mark parent terminal if known, else insert walk-once
+    this._trie.insertPreviousOrMark(previous, 1);
+    // Re-seed cursor for the single-byte candidate
+    this._trie.resetToSingleByte(lastByte);
 
     // After an emission, we no longer know the key for the *new* 1-byte candidate
     // until the next update(byte) happens, so clear lastCandidateKey.
@@ -209,10 +201,8 @@ export class LZS implements ILZS {
     candidate[0] = lastByte;
     this._keyGenerator.recalculate(candidate);
 
-    if (this._enableTrieSearch) {
-      this._trie.insertPreviousOrMark(previous, strength + 1);
-      this._trie.resetToSingleByte(lastByte);
-    }
+    this._trie.insertPreviousOrMark(previous, strength + 1);
+    this._trie.resetToSingleByte(lastByte);
 
     this._lastCandidateKey = null; // MDL <<<
     return previous;
@@ -228,10 +218,6 @@ export class LZS implements ILZS {
 
   // Compute local continuation entropy from trie children
   private _computeLocalEntropy(): number {
-    if (!this._enableTrieSearch) {
-      return Math.log(this._mdlZFixed); // fallback to fixed alphabet entropy
-    }
-
     const childDegree = this._trie.childDegreeAtParent();
     if (childDegree <= 1) {
       return 0; // no branching = no entropy
@@ -266,7 +252,6 @@ export class LZS implements ILZS {
     this._monitor.increment("bytesOut", previous.length);
     this._monitor.increment("oppUnknown");
 
-    if (!this._enableTrieSearch) return;
     const deg = this._trie.childDegreeAtParent();
     if (deg > 0) this._monitor.increment("hadLongerUnknown");
     this._monitor.increment("childDegreeSumUnknown", deg);
@@ -276,7 +261,6 @@ export class LZS implements ILZS {
     this._monitor.increment("bytesOut", previous.length);
     this._monitor.increment("oppUntrusted");
 
-    if (!this._enableTrieSearch) return;
     const deg = this._trie.childDegreeAtParent();
     if (deg > 0) this._monitor.increment("hadLongerUntrusted");
     this._monitor.increment("childDegreeSumUntrusted", deg);
@@ -330,7 +314,7 @@ export class LZS implements ILZS {
     this._cache.clear();
     this._keyGenerator.reset();
     this._monitor.reset();
-    if (this._enableTrieSearch) this._trie.cursorReset();
+    this._trie.cursorReset();
 
     // Reset EWMA state
     this._mdlMean = Math.log(this._mdlZFixed);
@@ -348,7 +332,7 @@ export class LZS implements ILZS {
     cache,
     trustThreshold = 1,
     stats,
-    trieSearch,
+    trie,
     mdl,
   }: ILZSConfig = {}) {
     this._cache = isILZSCache(cache)
@@ -356,21 +340,7 @@ export class LZS implements ILZS {
       : new LRUCache<number, number>({ max: cache?.size ?? 10_000 });
 
     // Trie
-    if (trieSearch?.trie) {
-      this._trie = trieSearch.trie;
-      this._enableTrieSearch = true;
-    } else {
-      switch (trieSearch?.mode) {
-        case "disabled":
-          this._trie = new NoOpByteTrie();
-          this._enableTrieSearch = false;
-          break;
-        default:
-          this._trie = new ByteTrie();
-          this._enableTrieSearch = true;
-          break;
-      }
-    }
+    this._trie = trie ?? new ByteTrie();
 
     this._keyGenerator = isIKeyGenerator(keyGenerator)
       ? keyGenerator
