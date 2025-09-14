@@ -6,7 +6,7 @@ import type {
   P_GetTokenByBytes,
   P_GetTokenById,
   P_PrefixSearch,
-  P_TransitionsFrom,
+  P_RefinedTransitionsFrom,
   Pair,
   R_CountPred,
   R_GetEdge,
@@ -14,27 +14,28 @@ import type {
   R_GetTokenById,
   R_LatticeStats,
   R_PrefixSearch,
-  R_TransitionsFrom,
+  R_RefinedTransitionsFrom,
   Token,
 } from "./schema";
 import { createSchema } from "./schema";
-
-export interface ILatticeConfig {
-  database?: { instance?: Database; path?: string };
-}
+import type { ILattice, ILatticeConfig } from "./lattice.domain";
 
 /**
  * Lattice provides a graph-based token storage and retrieval system.
  * Optimized for high-throughput training workloads with intelligent caching.
  */
-export class Lattice {
+export class Lattice implements ILattice {
+  readonly _config: ILatticeConfig;
   private _db: Database;
 
   // Query result caches (used during inference/tokenization)
   private _edgeCache = new LRUCache<string, R_GetEdge>({ max: 1000 });
   private _predecessorCache = new LRUCache<string, number>({ max: 500 });
   private _prefixCache = new LRUCache<string, R_PrefixSearch[]>({ max: 500 });
-  private _transitionsCache = new LRUCache<string, R_TransitionsFrom[]>({
+  private _refinedTransitionsCache = new LRUCache<
+    string,
+    R_RefinedTransitionsFrom[]
+  >({
     max: 500,
   });
   private _tokenByBytesCache = new LRUCache<string, R_GetTokenByBytes>({
@@ -52,9 +53,9 @@ export class Lattice {
     R_PrefixSearch,
     [P_PrefixSearch]
   >;
-  private readonly _stmtTransitionsFrom: Statement<
-    R_TransitionsFrom,
-    [P_TransitionsFrom]
+  private readonly _stmtRefinedTransitionsFrom: Statement<
+    R_RefinedTransitionsFrom,
+    [P_RefinedTransitionsFrom]
   >;
   private readonly _stmtGetTokenByBytes: Statement<
     R_GetTokenByBytes,
@@ -71,10 +72,11 @@ export class Lattice {
   // Statistical analysis prepared statement
   private readonly _stmtGetLatticeStats: Statement<R_LatticeStats, []>;
 
-  constructor({ database }: ILatticeConfig = {}) {
+  constructor(config: ILatticeConfig = {}) {
+    this._config = config;
     this._db =
-      database?.instance ??
-      new Database(database?.path ?? ":memory:", {
+      config.database?.instance ??
+      new Database(config.database?.path ?? ":memory:", {
         safeIntegers: false,
       });
 
@@ -82,7 +84,7 @@ export class Lattice {
     this._stmtGetEdge = statements.stmtGetEdge;
     this._stmtCountPredecessors = statements.stmtCountPredecessors;
     this._stmtPrefixSearch = statements.stmtPrefixSearch;
-    this._stmtTransitionsFrom = statements.stmtTransitionsFrom;
+    this._stmtRefinedTransitionsFrom = statements.stmtRefinedTransitionsFrom;
     this._stmtGetTokenByBytes = statements.stmtGetTokenByBytes;
     this._stmtGetTokenById = statements.stmtGetTokenById;
     this._stmtUpdateTokenDegrees = statements.stmtUpdateTokenDegrees;
@@ -128,12 +130,12 @@ export class Lattice {
     return result;
   };
 
-  transitionsFrom = (from: string): R_TransitionsFrom[] => {
-    const cached = this._transitionsCache.get(from);
+  refinedTransitionsFrom = (from: string): R_RefinedTransitionsFrom[] => {
+    const cached = this._refinedTransitionsCache.get(from);
     if (cached !== undefined) return cached;
 
-    const result = this._stmtTransitionsFrom.all({ $from: from });
-    this._transitionsCache.set(from, result);
+    const result = this._stmtRefinedTransitionsFrom.all({ $from: from });
+    this._refinedTransitionsCache.set(from, result);
     return result;
   };
 
@@ -190,7 +192,7 @@ export class Lattice {
     this._edgeCache.clear();
     this._predecessorCache.clear();
     this._prefixCache.clear();
-    this._transitionsCache.clear();
+    this._refinedTransitionsCache.clear();
     this._tokenByBytesCache.clear();
     this._tokenByIdCache.clear();
   }
@@ -313,4 +315,10 @@ export class Lattice {
       this._db.run("DROP TABLE temp_edges");
     }
   };
+
+  // ---- Configuration ----
+
+  get config(): ILatticeConfig {
+    return this._config;
+  }
 }

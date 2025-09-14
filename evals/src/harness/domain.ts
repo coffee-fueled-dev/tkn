@@ -1,8 +1,7 @@
-import type { IIngestConfig, Ingest, PerplexityResult } from "@tkn/tokenizer";
-import type { ProcessResult, Source } from "./process-source";
+import type { IIngestConfig, Ingest, ITokenizerStats } from "@tkn/tokenizer";
+import type { SourceResult, Source, SampleResult } from "./process-source";
 import type { BunFile } from "bun";
-import type { ILZSConfig, LZS } from "@tkn/lzs";
-import { ByteTrie } from "../../../packages/lzs/src/byte-trie";
+import { type ILZSConfig, type LZS, ByteTrie } from "@tkn/lzs";
 
 export interface Sample {
   content: string;
@@ -38,28 +37,19 @@ export interface TrainingConfig {
 }
 
 export interface JobResult {
-  training: ProcessResult;
+  training: SourceResult;
   metadata?: JobConfig["metadata"];
   process: JobConfig["process"];
   samples?: {
     results: SampleResult[];
     total: number;
-    avgTokensPerSample: number;
   };
-}
-
-export interface SampleResult {
-  content: Sample["content"];
-  tokens: number[];
-  strings: string[];
-  stats: PerplexityResult;
-  metadata?: Sample["metadata"];
 }
 
 export const DEFAULT_CONFIG: TrainingConfig = {
   lzs: {
     cache: { size: 70_000 },
-    stats: { mode: "extended" },
+    monitor: { mode: "extended" },
     trie: new ByteTrie(),
     mdl: {
       alpha: 0.1,

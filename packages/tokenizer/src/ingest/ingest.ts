@@ -1,33 +1,17 @@
-import {
-  Lattice,
-  type ILatticeConfig,
-  type Pair,
-  type Token,
-} from "../lattice";
+import { Lattice, type Pair, type Token } from "../lattice";
+import type { IIngest, IIngestConfig } from "./ingest.domain";
 
-export interface IIngestConfig {
-  batchSize?: number;
-  lattice?: ILatticeConfig | Lattice;
-  logProgress?: boolean;
-}
-
-export class Ingest {
+export class Ingest implements IIngest {
+  readonly _config: IIngestConfig;
   private _lattice: Lattice;
   private readonly _batchSize: number;
   private _tokenBuffer: string[] = [];
   private _logProgress?: boolean;
 
-  constructor(
-    { batchSize = 1000, lattice, logProgress = false }: IIngestConfig = {
-      batchSize: 1000,
-    }
-  ) {
-    if (lattice) {
-      this._lattice =
-        lattice instanceof Lattice ? lattice : new Lattice(lattice);
-    } else {
-      this._lattice = new Lattice({});
-    }
+  constructor(config: IIngestConfig = {}) {
+    this._config = config;
+    const { batchSize = 1000, lattice, logProgress = false } = config;
+    this._lattice = lattice instanceof Lattice ? lattice : new Lattice(lattice);
     this._batchSize = Math.max(1, batchSize);
     this._logProgress = logProgress;
   }
@@ -52,14 +36,18 @@ export class Ingest {
       strength: 1,
     }));
 
-    // Generate all edges (each transition occurrence gets weight=1)
-    const edgeOccurrences: Pair[] = [];
+    // Generate all edges with proper weight aggregation within the batch
+    const edgeMap = new Map<string, number>();
     for (let i = 0; i + 1 < batch.length; i++) {
-      edgeOccurrences.push({
-        from: batch[i],
-        to: batch[i + 1],
-        weight: 1,
-      });
+      const edgeKey = `${batch[i]}|${batch[i + 1]}`;
+      edgeMap.set(edgeKey, (edgeMap.get(edgeKey) ?? 0) + 1);
+    }
+
+    // Convert map to edge occurrences with aggregated weights
+    const edgeOccurrences: Pair[] = [];
+    for (const [edgeKey, weight] of edgeMap) {
+      const [from, to] = edgeKey.split("|");
+      edgeOccurrences.push({ from, to, weight });
     }
 
     if (this._logProgress) {
@@ -81,11 +69,15 @@ export class Ingest {
     this._lattice.updateTokenDegrees();
   }
 
+  get lattice(): Lattice {
+    return this._lattice;
+  }
+
   get stats(): Lattice["stats"] {
     return this._lattice.stats;
   }
 
-  get lattice(): Lattice {
-    return this._lattice;
+  get config(): IIngestConfig {
+    return this._config;
   }
 }

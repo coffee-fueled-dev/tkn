@@ -1,129 +1,27 @@
-/**
- * Throughput metrics for LZS performance
- */
-export interface IStats {
-  // Basic performance
-  durationMS: number;
-  bytesIn: number;
-  bytesOut: number;
-  rateMBs: number;
-
-  // Candidate flow
-  candidatesStarted: number;
-  tokensEmitted: number;
-
-  // Gate behavior (understanding greediness vs panic)
-  mdlGateChecked: number;
-  mdlGatePassed: number;
-  mdlGateFailRate: number;
-
-  cacheGateChecked: number;
-  cacheGatePassed: number;
-  cacheGateFailRate: number;
-
-  trieGateChecked: number;
-  trieGatePassed: number;
-  trieGateFailRate: number;
-
-  // Emission quality metrics
-  emissionHadLongerOptions: number;
-  emissionMissedExtensionRate: number;
-  emissionAvgChildDegree: number;
-
-  // MDL algorithm insights
-  avgMDLSurprisal: number;
-  mdlBaselineMean: number;
-  mdlBaselineStd: number;
-}
-
-/**
- * Counter types for performance monitoring
- *
- * Flow-based naming:
- * - Input: bytesIn, candidatesStarted
- * - Gates: mdl*, cache*, trie*, emission*
- * - Output: bytesOut, tokensEmitted
- */
-export type CounterType =
-  // Input metrics
-  | "bytesIn"
-  | "bytesOut"
-  | "candidatesStarted"
-
-  // Gate decision metrics (continue vs emit)
-  | "mdlGateChecked"
-  | "mdlGatePassed"
-  | "mdlGateFailed"
-  | "cacheGateChecked"
-  | "cacheGatePassed"
-  | "cacheGateFailed"
-  | "trieGateChecked"
-  | "trieGatePassed"
-  | "trieGateFailed"
-
-  // Emission metrics
-  | "tokensEmitted"
-  | "emissionHadLongerOptions"
-  | "emissionSumChildDegree"
-
-  // MDL algorithm metrics
-  | "mdlSumSurprisal"
-  | "mdlSumBaselineMean"
-  | "mdlSumBaselineStd";
-
-/**
- * Interface for performance monitoring with async counter updates
- */
-export interface ILZSMonitor {
-  /**
-   * Stats mode
-   */
-  readonly _mode: "disabled" | "performance-only" | "extended";
-
-  /**
-   * Increment a counter by the specified amount
-   */
-  increment(counter: CounterType, amount?: number): void;
-
-  /**
-   * Get current counter values (forces flush of pending updates)
-   */
-  getCounters(): Record<CounterType, number>;
-
-  /**
-   * Reset all counters to zero
-   */
-  reset(): void;
-
-  /**
-   * Force flush any pending counter updates
-   */
-  flush(): void;
-
-  /**
-   * Start tracking time. This will skip if there's already a running timer
-   */
-  start(): void;
-
-  /**
-   * Get current stats
-   */
-  stats: IStats | null;
-}
-
-export interface ILZMonitorConfig {
-  mode?: "disabled" | "performance-only" | "extended";
-  batchSize?: number;
-}
+import type {
+  CounterType,
+  IStats,
+  ILZSMonitor,
+  ILZSMonitorConfig,
+} from "./monitor.domain";
 
 /**
  * High-performance monitor with batched async counter updates
  * Minimizes hot path overhead by batching counter increments
  */
 export class LZSMonitor implements ILZSMonitor {
+  readonly _config: ILZSMonitorConfig;
   readonly _mode: "disabled" | "performance-only" | "extended";
+  readonly _batchSize: number;
+  private _batchCount = 0;
+  private _flushTimer: Timer | null = null;
   private _timeStart: number | null = null;
 
+  constructor({ mode = "disabled", batchSize = 1000 }: ILZSMonitorConfig) {
+    this._config = { mode, batchSize };
+    this._mode = mode;
+    this._batchSize = batchSize;
+  }
   // Current counter values
   private _counters: Record<CounterType, number> = {
     bytesIn: 0,
@@ -167,15 +65,6 @@ export class LZSMonitor implements ILZSMonitor {
     mdlSumBaselineMean: 0,
     mdlSumBaselineStd: 0,
   };
-
-  private _batchSize: number;
-  private _batchCount = 0;
-  private _flushTimer: Timer | null = null;
-
-  constructor({ mode = "disabled", batchSize = 1000 }: ILZMonitorConfig) {
-    this._mode = mode;
-    this._batchSize = batchSize;
-  }
 
   start(): void {
     if (this._timeStart) return;
@@ -240,6 +129,10 @@ export class LZSMonitor implements ILZSMonitor {
     }
   }
 
+  get config(): ILZSMonitorConfig {
+    return this._config;
+  }
+
   get stats(): IStats | null {
     if (!this._timeStart) return null;
     const durationMS = performance.now() - this._timeStart;
@@ -298,8 +191,13 @@ export class LZSMonitor implements ILZSMonitor {
   }
 }
 
-export class NoOpMonitor implements ILZSMonitor {
+export class NoOpLZSMonitor implements ILZSMonitor {
+  readonly _config: ILZSMonitorConfig = {
+    mode: "disabled",
+    batchSize: 1000,
+  };
   readonly _mode: "disabled" | "performance-only" | "extended" = "disabled";
+  readonly _batchSize: number = 1000;
 
   // Current counter values
   private _counters: Record<CounterType, number> = {
@@ -345,5 +243,9 @@ export class NoOpMonitor implements ILZSMonitor {
 
   get stats(): IStats | null {
     return null;
+  }
+
+  get config(): ILZSMonitorConfig {
+    return this._config;
   }
 }

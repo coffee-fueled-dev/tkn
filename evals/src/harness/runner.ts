@@ -1,4 +1,4 @@
-import { Tokenizer, Lattice } from "@tkn/tokenizer";
+import { Lattice } from "@tkn/tokenizer";
 import { UnicodeReader } from "@tkn/serializers";
 
 import {
@@ -6,11 +6,15 @@ import {
   type JobResult,
   type IJobRunner,
   type Sample,
-  type SampleResult,
   type TrainingConfig,
   DEFAULT_CONFIG,
 } from "./domain";
-import { processSource, type Source } from "./process-source";
+import {
+  processSource,
+  processSample,
+  type Source,
+  type SampleResult,
+} from "./process-source";
 
 export class JobRunner implements IJobRunner {
   private _sharedConfig?: TrainingConfig;
@@ -80,17 +84,12 @@ export class JobRunner implements IJobRunner {
       `✨ Job complete\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
     );
 
-    const avgTokensPerSample =
-      sampleResults.reduce((sum, r) => sum + r.tokens.length, 0) /
-      sampleResults.length;
-
     return {
       training: trainingResult,
       metadata: config.metadata,
       samples: {
         results: sampleResults,
         total: sampleResults.length,
-        avgTokensPerSample,
       },
       process: { ...config.process, duration: performance.now() },
     };
@@ -123,7 +122,6 @@ export class JobRunner implements IJobRunner {
     lattice?: Lattice
   ): Promise<SampleResult[]> {
     const results: SampleResult[] = [];
-    const tokenizer = new Tokenizer({ lattice });
 
     for (const sample of samples) {
       if (sampleConfig.logProgress) {
@@ -135,39 +133,46 @@ export class JobRunner implements IJobRunner {
       }
 
       try {
-        const tokens = tokenizer.decode(sample.content);
-        const strings = tokenizer.toStrings(tokens);
-        const stats = tokenizer.computePerplexity(tokens);
-
-        const result: SampleResult = {
+        const result = processSample({
           content: sample.content,
-          tokens,
-          strings,
-          stats,
+          lattice,
           metadata: sample.metadata,
-        };
+        });
 
         results.push(result);
-
-        if (sampleConfig.logTokens) {
-          console.log(
-            `  📋 Tokens (${tokens.length}):\n[${strings.join(
-              " | "
-            )}]\n[${tokens.join(" | ")}]\n[${Object.entries(stats)
-              .map(([k, v]) =>
-                typeof v === "number" ? `${k}: ${v.toFixed(3)}` : null
-              )
-              .filter(Boolean)
-              .join(" | ")}]`
-          );
-        } else if (sampleConfig.logProgress) {
-          console.log(`  ✅ ${tokens.length} tokens`);
-        }
+        this.logSampleResult(result, sampleConfig);
       } catch (error) {
         console.warn(`⚠️ Failed to tokenize: "${sample.content}" - ${error}`);
       }
     }
 
     return results;
+  }
+
+  private logSampleResult(
+    result: SampleResult,
+    sampleConfig: JobConfig["sampleConfig"]
+  ): void {
+    if (sampleConfig.logTokens) {
+      console.log(
+        `  📋 Tokens (${result.tokens.length}):\n[${result.strings.join(
+          " | "
+        )}]\n[${result.tokens.join(" | ")}]`
+      );
+      if (result.tokenizerStats) {
+        console.log(
+          `  🔧 Tokenizer: ${result.tokenizerStats.rateTokPerSec.toFixed(
+            1
+          )} tok/s, ${result.tokenizerStats.greedySteps} greedy, ${
+            result.tokenizerStats.viterbiWindows
+          } viterbi`
+        );
+      }
+    } else if (sampleConfig.logProgress) {
+      const tokRate = result.tokenizerStats
+        ? ` (${result.tokenizerStats.rateTokPerSec.toFixed(1)} tok/s)`
+        : "";
+      console.log(`  ✅ ${result.tokens.length} tokens${tokRate}`);
+    }
   }
 }

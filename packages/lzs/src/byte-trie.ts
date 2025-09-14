@@ -1,38 +1,6 @@
+import type { IByteTrie } from "./byte-trie.domain";
+
 type NodeId = number;
-
-export interface IByteTrie {
-  root(): NodeId;
-  child(node: NodeId, b: number): NodeId | undefined;
-  ensureChild(node: NodeId, b: number): NodeId;
-  markTerminal(node: NodeId, strengthInc?: number, tick?: number): void;
-  insertToken(
-    bytes: ArrayLike<number>,
-    strengthInc?: number,
-    tick?: number
-  ): NodeId;
-  hasPrefix(bytes: ArrayLike<number>): boolean;
-  childDegreeById(node: NodeId): number;
-  childDegree(bytes: ArrayLike<number>): number;
-
-  // Rolling cursor API (new)
-  cursorReset(): void;
-  cursorInitFirst(byte: number): void;
-  cursorAdvance(byte: number, tryRootFallback?: boolean): boolean;
-  cursorValid(): boolean;
-  parentValid(): boolean;
-  childDegreeAtParent(): number;
-  markParentTerminal(strengthInc?: number, tick?: number): void;
-  resetToSingleByte(byte: number): void;
-  insertPreviousOrMark(
-    previous: ArrayLike<number>,
-    strengthInc?: number,
-    tick?: number
-  ): void;
-
-  // Optional getters if you want to inspect:
-  getCursor(): number; // current node id or -1
-  getParent(): number; // parent node id or -1
-}
 
 /**
  * Write-optimized ByteTrie

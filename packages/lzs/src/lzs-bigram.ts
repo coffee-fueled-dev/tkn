@@ -1,12 +1,13 @@
 import { Uint8 } from "../../serializers/src/uint8";
-import type { ILZSConfig } from "./domain";
+import type { ILZSConfig } from "./lzs.domain";
+import type { ILZSBigram } from "./lzs-bigram.domain";
 import { LZS } from "./lzs";
 
 /**
  * LZSBigram is a wrapper around LZS that reprocesses tokens
  * that were emit by a byte-level LZS into chunk-level tokens
  */
-export class LZSBigram extends LZS {
+export class LZSBigram extends LZS implements ILZSBigram {
   private _lzsBytes: LZS;
 
   constructor(lzsBytes: ILZSConfig | LZS, config: ILZSConfig) {

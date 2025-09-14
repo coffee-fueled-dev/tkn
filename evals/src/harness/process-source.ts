@@ -1,5 +1,11 @@
 import { LZS, type ILZSConfig } from "@tkn/lzs";
-import { Ingest, Lattice, type IIngestConfig } from "@tkn/tokenizer";
+import {
+  Ingest,
+  Lattice,
+  Tokenizer,
+  type IIngestConfig,
+  type ITokenizerStats,
+} from "@tkn/tokenizer";
 import { Hex, UnicodeReader } from "@tkn/serializers";
 
 export interface Source {
@@ -14,9 +20,50 @@ export interface ProcessSourceConfig {
   ingest?: IIngestConfig | Ingest | false; // Optionally supply an ingest or config to train the tokenizer, otherwise this is a dry run of the LZS
 }
 
-export interface ProcessResult {
-  lzsStats: LZS["stats"];
-  latticeStats: Lattice["stats"];
+export interface SourceResult {
+  lzs: LZS["stats"];
+  lattice: Lattice["stats"];
+}
+
+export interface ProcessSampleConfig {
+  content: string;
+  tokenizer?: Tokenizer;
+  lattice?: Lattice;
+  metadata?: Record<string, string>;
+}
+
+export interface SampleResult {
+  content: string;
+  tokens: number[];
+  strings: string[];
+  tokenizerStats: ITokenizerStats | null;
+  metadata?: Record<string, string>;
+}
+
+export function processSample({
+  content,
+  tokenizer,
+  lattice,
+  metadata,
+}: ProcessSampleConfig): SampleResult {
+  const _tokenizer =
+    tokenizer ??
+    new Tokenizer({
+      lattice,
+      monitor: { mode: "extended" },
+    });
+
+  const tokens = _tokenizer.decode(content);
+  const strings = _tokenizer.toStrings(tokens);
+  const tokenizerStats = _tokenizer.stats;
+
+  return {
+    content,
+    tokens,
+    strings,
+    tokenizerStats,
+    metadata,
+  };
 }
 
 export async function processSource({
@@ -25,7 +72,7 @@ export async function processSource({
   logSequences = false,
   lzs,
   ingest,
-}: ProcessSourceConfig): Promise<ProcessResult & { ingest?: Ingest }> {
+}: ProcessSourceConfig): Promise<SourceResult & { ingest?: Ingest }> {
   const _lzs = lzs instanceof LZS ? lzs : new LZS(lzs);
 
   const _ingest =
@@ -64,9 +111,9 @@ export async function processSource({
 
     if (_ingest) _ingest.flush();
 
-    const result: ProcessResult = {
-      lzsStats: _lzs.stats ?? null,
-      latticeStats: _ingest?.stats ?? null,
+    const result: SourceResult = {
+      lzs: _lzs.stats ?? null,
+      lattice: _ingest?.stats ?? null,
     };
 
     return { ...result, ingest: _ingest };

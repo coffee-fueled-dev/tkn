@@ -1,21 +1,12 @@
 import { LRUCache } from "lru-cache";
-import {
-  type IFlushResult,
-  type ILZS,
-  type ILZSConfig,
-  type ILZSCache,
-  type IKeyGenerator,
-  isILZSCache,
-  isIKeyGenerator,
-} from "./domain";
-import { ByteTrie, NoOpByteTrie, type IByteTrie } from "./byte-trie";
+import type { ILZS, ILZSConfig } from "./lzs.domain";
+import type { IFlushResult, ILZSCache, IKeyGenerator } from "./_shared.domain";
+import { isILZSCache, isIKeyGenerator } from "./_shared.domain";
+import { ByteTrie, NoOpByteTrie } from "./byte-trie";
+import type { IByteTrie } from "./byte-trie.domain";
 import { RollingHash } from "@tkn/serializers";
-import {
-  LZSMonitor,
-  NoOpMonitor,
-  type ILZSMonitor,
-  type IStats,
-} from "./monitor";
+import { LZSMonitor, NoOpLZSMonitor } from "./monitor";
+import type { ILZSMonitor, IStats } from "./monitor.domain";
 
 /**
  * Lempel-Ziv Stream Tokenizer (LZS) — refactored to use ByteTrie rolling cursor API.
@@ -107,7 +98,7 @@ export class LZS implements ILZS {
 
     // Gate 2: Cache gate (check if we've seen this sequence before)
     this.monitorCacheGateChecked();
-    if (strength >= 1) {
+    if (strength >= 2) {
       this.monitorCacheGatePassed();
       this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
@@ -330,13 +321,13 @@ export class LZS implements ILZS {
   }
 
   // ---------- Ctor ----------
-  constructor({ keyGenerator, cache, stats, trie, mdl }: ILZSConfig = {}) {
+  constructor({ keyGenerator, cache, monitor, trie, mdl }: ILZSConfig = {}) {
     this._cache = isILZSCache(cache)
       ? cache
       : new LRUCache<number, number>({ max: cache?.size ?? 10_000 });
 
     // Trie
-    this._trie = trie ?? new ByteTrie();
+    this._trie = trie ? new ByteTrie() : new NoOpByteTrie();
 
     this._keyGenerator = isIKeyGenerator(keyGenerator)
       ? keyGenerator
@@ -358,17 +349,14 @@ export class LZS implements ILZS {
     this._c2 = this._mdlC * this._mdlC;
     this._initMDLTables(512);
 
-    // Monitor
-    if (!stats || stats.mode === "disabled") {
-      this._monitor = new NoOpMonitor();
-      this._enableMonitoring = false;
-    } else if (stats.monitor) {
-      this._monitor = stats.monitor;
-      this._enableMonitoring = true;
-    } else {
-      this._monitor = new LZSMonitor({ mode: stats.mode });
-      this._enableMonitoring = true;
-    }
+    this._monitor =
+      monitor instanceof LZSMonitor
+        ? monitor
+        : monitor
+        ? new LZSMonitor(monitor)
+        : new NoOpLZSMonitor();
+
+    this._enableMonitoring = this._monitor.config.mode !== "disabled";
 
     this._handleUnknownCandidate = this.handleUnknownCandidate.bind(this);
   }

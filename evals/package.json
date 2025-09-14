@@ -12,6 +12,7 @@
     "eval:cross-lingual": "bun run src/cross-lingual/eval.ts",
     "eval:english-small": "bun run src/english/small/eval.ts",
     "eval:english-medium": "bun run src/english/medium/eval.ts",
+    "eval:english-large": "bun run src/english/large/eval.ts",
     "eval:performance": "bun run src/performance/eval.ts"
   },
   "devDependencies": {},

@@ -20,7 +20,13 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify(results, null, 2));
+  console.log(
+    JSON.stringify(
+      results.map(({ samples, ...r }) => r),
+      null,
+      2
+    )
+  );
 }
 
 main().catch(console.error);

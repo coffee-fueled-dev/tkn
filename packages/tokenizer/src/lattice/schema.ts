@@ -27,8 +27,12 @@ export type R_CountPred = { n_predecessors: number | null };
 export type P_PrefixSearch = { $esc: string };
 export type R_PrefixSearch = { bytes: string };
 
-export type P_TransitionsFrom = { $from: string };
-export type R_TransitionsFrom = { bytes: string; weight: number };
+export type P_RefinedTransitionsFrom = { $from: string };
+export type R_RefinedTransitionsFrom = {
+  bytes: string;
+  weight: number;
+  pmi: number;
+};
 
 export type P_GetTokenByBytes = { $bytes: string };
 export type R_GetTokenByBytes = {
@@ -204,17 +208,21 @@ export function createSchema(db: Database) {
       GROUP BY from_bytes;
     `);
 
-  // Refined edges with Top-K pruning by PMI (K=8)
+  // Refined edges with conservative Top-K pruning by weight - less aggressive than DICE
   db.run(`
       CREATE VIEW IF NOT EXISTS v_refined_edges AS
-      WITH scored AS (
-        SELECT e.*,
-               ROW_NUMBER() OVER (PARTITION BY from_bytes ORDER BY pmi DESC, weight DESC) AS rn
-        FROM v_edge_pmi e
+      WITH weight_ranked AS (
+        SELECT 
+          from_bytes, 
+          to_bytes, 
+          weight,
+          ROW_NUMBER() OVER (PARTITION BY from_bytes ORDER BY weight DESC) AS rn
+        FROM Edge
+        WHERE weight > 0
       )
-      SELECT from_bytes, to_bytes, weight, pmi
-      FROM scored
-      WHERE rn <= 8;
+      SELECT from_bytes, to_bytes, weight, 0.0 as pmi
+      FROM weight_ranked
+      WHERE rn <= 20;
     `);
 
   // ---------- Indexes ----------
@@ -250,9 +258,12 @@ export function createSchema(db: Database) {
       ORDER BY length(bytes) DESC
     `);
 
-  const stmtTransitionsFrom = db.query<R_TransitionsFrom, [P_TransitionsFrom]>(`
-      SELECT to_bytes AS bytes, weight
-      FROM Edge
+  const stmtRefinedTransitionsFrom = db.query<
+    R_RefinedTransitionsFrom,
+    [P_RefinedTransitionsFrom]
+  >(`
+      SELECT to_bytes AS bytes, weight, pmi
+      FROM v_refined_edges
       WHERE from_bytes = $from
     `);
 
@@ -369,7 +380,7 @@ export function createSchema(db: Database) {
     stmtGetEdge,
     stmtCountPredecessors,
     stmtPrefixSearch,
-    stmtTransitionsFrom,
+    stmtRefinedTransitionsFrom,
     stmtGetTokenByBytes,
     stmtGetTokenById,
     stmtUpdateTokenDegrees,

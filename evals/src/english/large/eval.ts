@@ -1,19 +1,14 @@
-import { JobRunner } from "../harness";
-import { PERFORMANCE_JOBS } from "./job-configs";
+import { JobRunner } from "../../harness";
+import { ENGLISH_LARGE_JOBS } from "./job-configs";
 
 async function main() {
-  console.log("🌍 Starting LZS Performance Evaluation");
-  console.log(`📊 Running ${PERFORMANCE_JOBS.length} evaluations`);
+  console.log("🌍 Starting English - Large Corpus Evaluation");
+  console.log(`📊 Running ${ENGLISH_LARGE_JOBS.length} language evaluations`);
 
-  const runner = new JobRunner({
-    ingest: false,
-    logSequences: false,
-    logProgress: false,
-    lzs: { monitor: { mode: "extended" } },
-  });
+  const runner = new JobRunner({ logSequences: false });
   const results = [];
 
-  for (const jobConfig of PERFORMANCE_JOBS) {
+  for (const jobConfig of ENGLISH_LARGE_JOBS) {
     try {
       const result = await runner.run(jobConfig);
       results.push(result);
