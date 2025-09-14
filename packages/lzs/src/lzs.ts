@@ -58,8 +58,6 @@ export class LZS implements ILZS {
   // EWMA relative surprise state
   private readonly _mdlBeta: number; // EWMA decay rate
   private readonly _mdlC: number; // surprise tolerance factor
-  private _mdlMean: number; // EWMA mean of surprisal
-  private _mdlVar: number; // EWMA variance of surprisal
 
   // Entropy scaling
   private readonly _mdlTau: number; // entropy scaling factor
@@ -181,6 +179,7 @@ export class LZS implements ILZS {
     const thrDeg = this._degThr[Z <= 512 ? Z : 512];
     const passEntropy = p >= thrDeg;
 
+    this.monitorMDLMetrics(p, thrDeg, varP);
     if (passRelative && passEntropy) {
       // Accept extension; roll previous key forward
       this._lastCandidateKey = candidateKey;
@@ -210,26 +209,6 @@ export class LZS implements ILZS {
     this._lastCandidateKey = null; // MDL <<<
 
     return previous;
-  }
-
-  // ---------- MDL helpers ----------
-  private _getPrevKey(): number | null {
-    return this._lastCandidateKey; // candidate key before appending current byte
-  }
-  private _getPrevCount(prevKey: number): number {
-    return this._cache.get(prevKey) ?? 0;
-  }
-
-  // Compute local continuation entropy from trie children
-  private _computeLocalEntropy(): number {
-    const childDegree = this._trie.childDegreeAtParent();
-    if (childDegree <= 1) {
-      return 0; // no branching = no entropy
-    }
-
-    // Approximate uniform distribution over observed children
-    // In practice, you could maintain actual child weights, but this is simpler
-    return Math.log(childDegree);
   }
 
   // ---------- Monitor helpers ----------
@@ -343,8 +322,6 @@ export class LZS implements ILZS {
     this._trie.cursorReset();
 
     // Reset EWMA state
-    this._mdlMean = Math.log(this._mdlZFixed);
-    this._mdlVar = 1.0;
     this._lastCandidateKey = null;
   }
 
@@ -373,8 +350,6 @@ export class LZS implements ILZS {
     // EWMA relative surprise parameters
     this._mdlBeta = mdl?.beta ?? 0.02; // decay rate (half-life ~35 steps)
     this._mdlC = mdl?.c ?? 0.7; // surprise tolerance factor
-    this._mdlMean = Math.log(this._mdlZFixed); // initialize to uniform surprise
-    this._mdlVar = 1.0; // initialize with some variance
 
     // Entropy scaling parameters
     this._mdlTau = mdl?.tau ?? 0.8; // entropy scaling factor
