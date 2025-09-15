@@ -22,11 +22,9 @@ export class RollingHash implements IKeyGenerator {
     return this._hash;
   }
 
-  /**
-   * Update hash with a single byte (masked to 0–255).
-   */
-  update(byte: number): number {
-    this._hash = (this._hash * this.HASH_PRIME + (byte & 0xff)) >>> 0;
+  update(int: number): number {
+    const v = (int | 0) >>> 0; // int32 → uint32
+    this._hash = (Math.imul(this._hash, this.HASH_PRIME) + v) >>> 0;
     return this._hash;
   }
 

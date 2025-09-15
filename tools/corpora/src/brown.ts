@@ -61,7 +61,7 @@ async function exists(p: string) {
 }
 
 async function findLocalBrownDir(
-  cliDir?: string | null,
+  cliDir?: string | null
 ): Promise<string | null> {
   const candidates = [
     cliDir,
@@ -126,27 +126,102 @@ async function downloadAndUnzipBrown(cacheRoot = ".cache"): Promise<string> {
   return brownDir;
 }
 
-function cleanWord(w: string): string {
-  // keep only a-z
-  return w.toLowerCase().replace(/[^a-z]/g, "");
+export function stripPosTag(token: string): string | null {
+  const slash = token.lastIndexOf("/");
+  const word = slash === -1 ? token : token.slice(0, slash);
+  if (!word) return null;
+
+  // Brown quoting tokens
+  if (word === "``") return "“";
+  if (word === "''") return "”";
+
+  // Common dash token in Brown
+  if (word === "--") return "—";
+
+  return word;
+}
+
+export function detokenize(tokens: Iterable<string>): string {
+  const noSpaceBefore = new Set([
+    ",",
+    ".",
+    ":",
+    ";",
+    "?",
+    "!",
+    "%",
+    ")",
+    "]",
+    "}",
+    "”",
+    "’",
+  ]);
+  const noSpaceAfter = new Set(["(", "[", "{", "“", "$", "£", "€"]);
+  const attachAsClitic = (t: string) =>
+    /^('s|'re|'ve|'d|n't|'ll|'m|'em)$/.test(t);
+
+  let out = "";
+  let prev = "";
+
+  for (const raw of tokens) {
+    const t = raw;
+
+    // 1) Skip duplicate sentence-final punctuation (e.g., "Jr." then ".")
+    if ((t === "." || t === "?" || t === "!") && prev.endsWith(t)) {
+      continue;
+    }
+
+    // 2) Em dash spacing: ensure spaces around — while avoiding doubles
+    if (t === "—") {
+      // Normalize to " — " unless at boundaries
+      if (!out) {
+        out = "—";
+        prev = t;
+        continue;
+      }
+      if (out[out.length - 1] !== " ") out += " ";
+      out += "—";
+      prev = t;
+      continue;
+    }
+
+    if (!out) {
+      out = t;
+    } else if (noSpaceBefore.has(t) || attachAsClitic(t)) {
+      out += t;
+    } else if (noSpaceAfter.has(prev)) {
+      out += t;
+    } else {
+      out += " " + t;
+    }
+    prev = t;
+  }
+
+  // --- Post-pass cleanup ---
+  // Remove space before closers / punctuation
+  out = out.replace(/\s+([,.;:?!%)\]\}”’])/g, "$1");
+  // Remove space after openers
+  out = out.replace(/([(\[\{“$£€])\s+/g, "$1");
+  // Normalize em dash spacing to single spaces on both sides
+  out = out.replace(/\s*—\s*/g, " — ");
+  // Collapse multiple spaces
+  out = out.replace(/\s{2,}/g, " ");
+  // Trim
+  out = out.trim();
+
+  return out;
 }
 
 async function* iterBrownTokens(brownDir: string): AsyncGenerator<string> {
-  // Read all files in the brown dir; ignore README/CATS files
   const files = (await readdir(brownDir)).filter((f) =>
-    /^[a-z]{2}\d{2}$/i.test(f),
+    /^[a-z]{2}\d{2}$/i.test(f)
   );
-  files.sort(); // stable order
-
+  files.sort();
   for (const file of files) {
-    const p = join(brownDir, file);
-    const txt = await readFile(p, "utf8");
-    // The files are whitespace-tokenized text with punctuation as separate tokens
-    // Split on whitespace to get tokens, then clean
-    const rawTokens = txt.split(/\s+/);
-    for (const tok of rawTokens) {
+    const txt = await readFile(join(brownDir, file), "utf8");
+    for (const tok of txt.split(/\s+/)) {
       if (!tok) continue;
-      const cleaned = cleanWord(tok);
+      const cleaned = stripPosTag(tok);
       if (cleaned) yield cleaned;
     }
   }
@@ -172,7 +247,7 @@ async function main() {
   let wordCount = 0;
 
   console.log(
-    "\n🔄 Processing: lowercasing and removing punctuation/numbers...",
+    "\n🔄 Processing: removing POS tags while preserving casing and punctuation..."
   );
   for await (const w of iterBrownTokens(brownDir)) {
     allGoldWords.push(w);
@@ -184,7 +259,7 @@ async function main() {
   }
 
   console.log(
-    `✅ Processed ${allGoldWords.length.toLocaleString()} total words.`,
+    `✅ Processed ${allGoldWords.length.toLocaleString()} total words.`
   );
 
   await mkdir(OUTPUT_DIR, { recursive: true });
@@ -195,17 +270,17 @@ async function main() {
   await writeFile(OUTPUT_GOLD_STANDARD_FILE, allGoldWords.join(" "), "utf8");
   const goldSize = (await stat(OUTPUT_GOLD_STANDARD_FILE)).size;
   console.log(
-    `✅ Gold standard file created (${goldSize.toLocaleString()} bytes)`,
+    `✅ Gold standard file created (${goldSize.toLocaleString()} bytes)`
   );
 
   // Unsegmented (no spaces)
   console.log(
-    `📝 Writing unsegmented input file to: ${OUTPUT_UNSEGMENTED_FILE}`,
+    `📝 Writing unsegmented input file to: ${OUTPUT_UNSEGMENTED_FILE}`
   );
   await writeFile(OUTPUT_UNSEGMENTED_FILE, allGoldWords.join(""), "utf8");
   const unsegSize = (await stat(OUTPUT_UNSEGMENTED_FILE)).size;
   console.log(
-    `✅ Unsegmented file created (${unsegSize.toLocaleString()} bytes)`,
+    `✅ Unsegmented file created (${unsegSize.toLocaleString()} bytes)`
   );
 
   // Sanity check
@@ -213,12 +288,12 @@ async function main() {
   console.log("-".repeat(20));
   const goldPreview = (await readFile(OUTPUT_GOLD_STANDARD_FILE, "utf8")).slice(
     0,
-    100,
+    100
   );
   console.log(`Gold Standard start: '${goldPreview}...'`);
   const unsegPreview = (await readFile(OUTPUT_UNSEGMENTED_FILE, "utf8")).slice(
     0,
-    100,
+    100
   );
   console.log(`Unsegmented start:   '${unsegPreview}...'`);
 
@@ -237,10 +312,10 @@ async function main() {
   console.log("\n✅ Corpus preparation complete!");
   console.log("\n💡 Next steps:");
   console.log(
-    `   1. Use '${OUTPUT_UNSEGMENTED_FILE}' as input to your TKN CLI`,
+    `   1. Use '${OUTPUT_UNSEGMENTED_FILE}' as input to your TKN CLI`
   );
   console.log(
-    `   2. Use '${OUTPUT_GOLD_STANDARD_FILE}' as ground truth for evaluation`,
+    `   2. Use '${OUTPUT_GOLD_STANDARD_FILE}' as ground truth for evaluation`
   );
   console.log(`   3. Example CLI command:`);
   console.log(`      bun run cli:brown -- ${OUTPUT_UNSEGMENTED_FILE}`);

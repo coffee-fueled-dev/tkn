@@ -6,7 +6,7 @@ import {
   type IIngestConfig,
   type ITokenizerStats,
 } from "@tkn/tokenizer";
-import { Hex, UnicodeReader } from "@tkn/serializers";
+import { Hex, Unicode } from "@tkn/serializers";
 
 export interface Source {
   [Symbol.asyncIterator](): AsyncGenerator<number[], void, unknown>;
@@ -17,7 +17,7 @@ export interface ProcessSourceConfig {
   logProgress?: boolean;
   logSequences?: boolean;
   lzs?: ILZSConfig | LZS;
-  ingest?: IIngestConfig | Ingest | false; // Optionally supply an ingest or config to train the tokenizer, otherwise this is a dry run of the LZS
+  ingest?: IIngestConfig | Ingest | false; // False will do a dry run of the LZS
 }
 
 export interface SourceResult {
@@ -87,17 +87,15 @@ export async function processSource({
 
     for await (const chunk of source) {
       for (const codepoint of chunk) {
-        const sequence = _lzs.processByte(codepoint);
+        const sequence = _lzs.push(codepoint);
         if (logProgress) processedCodepoints++;
 
         if (sequence) {
           if (logSequences) {
-            console.log(`${UnicodeReader.codepointsToString(sequence)}`);
+            console.log(`${Unicode.toString(sequence)}`);
           }
           if (_ingest) {
-            _ingest.buffer(
-              Hex.fromBytes(UnicodeReader.codepointsToUtf8Bytes(sequence))
-            );
+            _ingest.buffer(Hex.fromBytes(Unicode.toUtf8Bytes(sequence)));
           }
         }
 
@@ -106,6 +104,14 @@ export async function processSource({
             `\r📈 Processed ${processedCodepoints} codepoints`
           );
         }
+      }
+    }
+
+    const buffered = _lzs.flush();
+
+    if (buffered.current) {
+      for (const token of buffered.current) {
+        if (_ingest) _ingest.buffer(Hex.fromBytes(token));
       }
     }
 

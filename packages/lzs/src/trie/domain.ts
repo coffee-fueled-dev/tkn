@@ -1,10 +1,10 @@
-type NodeId = number;
+export type NodeId = number;
 
 /**
- * Interface for ByteTrie implementations
+ * Interface for LZSTrie implementations
  * Defines both core trie operations and streaming cursor API
  */
-export interface IByteTrie {
+export interface ILZSTrie {
   // ===== CORE TRIE API =====
 
   /**
@@ -39,7 +39,7 @@ export interface IByteTrie {
   /**
    * Check if bytes form a valid prefix path in the trie
    */
-  hasPrefix(bytes: ArrayLike<number>): boolean;
+  hasPrefix(values: ArrayLike<number>): boolean;
 
   /**
    * Get number of immediate children for a given node ID
@@ -49,7 +49,7 @@ export interface IByteTrie {
   /**
    * Get number of immediate children for a prefix path
    */
-  childDegree(bytes: ArrayLike<number>): number;
+  childDegree(values: ArrayLike<number>): number;
 
   // ===== STREAMING CURSOR API =====
 
@@ -59,15 +59,15 @@ export interface IByteTrie {
   cursorReset(): void;
 
   /**
-   * Initialize cursor for the very first byte of a new candidate
+   * Initialize cursor for the very first value of a new candidate
    */
-  cursorInitFirst(byte: number): void;
+  cursorInitFirst(value: number): void;
 
   /**
-   * Advance cursor by one byte in O(1)
+   * Advance cursor by one value in O(1)
    * Returns true if the extended candidate is still a known prefix
    */
-  cursorAdvance(byte: number, tryRootFallback?: boolean): boolean;
+  cursorAdvance(value: number, tryRootFallback?: boolean): boolean;
 
   /**
    * Check if the current candidate is a valid trie prefix
@@ -75,7 +75,7 @@ export interface IByteTrie {
   cursorValid(): boolean;
 
   /**
-   * Check if the previous prefix (candidate without last byte) is valid
+   * Check if the previous prefix (candidate without last value) is valid
    */
   parentValid(): boolean;
 
@@ -90,9 +90,9 @@ export interface IByteTrie {
   markParentTerminal(strengthInc?: number, tick?: number): void;
 
   /**
-   * Reset cursor to a single byte after emission
+   * Reset cursor to a single value after emission
    */
-  resetToSingleByte(byte: number): void;
+  resetToSingleValue(value: number): void;
 
   /**
    * Mark parent terminal if valid, else insert the full previous token

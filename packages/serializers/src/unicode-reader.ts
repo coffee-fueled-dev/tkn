@@ -1,12 +1,12 @@
 /**
  * Unicode-aware text reader that yields codepoints instead of UTF-8 bytes
  */
-export class UnicodeReader {
+export class Unicode {
   /**
    * Convert a text string into an array of Unicode codepoints
    * Each codepoint is a number that represents one logical character
    */
-  static stringToCodepoints(text: string): number[] {
+  static fromString(text: string): number[] {
     const codepoints: number[] = [];
     for (const char of text) {
       codepoints.push(char.codePointAt(0)!);
@@ -17,7 +17,7 @@ export class UnicodeReader {
   /**
    * Convert an array of Unicode codepoints back to a string
    */
-  static codepointsToString(codepoints: number[]): string {
+  static toString(codepoints: number[]): string {
     return String.fromCodePoint(...codepoints);
   }
 
@@ -25,43 +25,32 @@ export class UnicodeReader {
    * Convert an array of Unicode codepoints to UTF-8 bytes
    * This is needed when storing tokens in the lattice as hex-encoded bytes
    */
-  static codepointsToUtf8Bytes(codepoints: number[]): number[] {
+  static toUtf8Bytes(codepoints: number[]): number[] {
     const text = String.fromCodePoint(...codepoints);
     const encoder = new TextEncoder();
     return Array.from(encoder.encode(text));
   }
 
-  /**
-   * Read file as Unicode codepoints instead of UTF-8 bytes
-   */
-  static async readFileAsCodepoints(filePath: string) {
-    const file = Bun.file(filePath);
-    const exists = await file.exists();
-    if (!exists) {
-      console.error({ filePath }, "Corpus file not found");
-      process.exit(1);
+  // Returns an async-iterable of codepoint chunks (number[])
+  static async *stream(source: Bun.BunFile, chunkCP = 8192) {
+    // fatal:true -> throw on malformed UTF-8 instead of inserting U+FFFD
+    const textStream = source.stream().pipeThrough(new TextDecoderStream());
+
+    let buf: number[] = [];
+    for await (const str of textStream) {
+      // Optional: normalize per-chunk if you want canonical stability
+      // const s = str.normalize("NFC");
+      const s = str;
+
+      for (const ch of s) {
+        buf.push(ch.codePointAt(0)!);
+        if (buf.length >= chunkCP) {
+          yield buf;
+          buf = [];
+        }
+      }
     }
 
-    console.info({ fileSize: file.size }, "Processing corpus file as Unicode");
-
-    // Read entire file as text, then convert to codepoints
-    const text = await file.text();
-    const codepoints = this.stringToCodepoints(text);
-
-    // Create an async iterable that yields chunks of codepoints
-    const asyncIterable = {
-      async *[Symbol.asyncIterator]() {
-        const chunkSize = 8192; // Yield in chunks for memory efficiency
-        for (let i = 0; i < codepoints.length; i += chunkSize) {
-          yield codepoints.slice(i, i + chunkSize);
-        }
-      },
-    };
-
-    return {
-      stream: asyncIterable,
-      size: codepoints.length, // Now counts characters, not bytes
-      text, // Also provide original text for debugging
-    };
+    if (buf.length) yield buf;
   }
 }

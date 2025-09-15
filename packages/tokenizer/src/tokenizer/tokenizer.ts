@@ -1,5 +1,5 @@
 import { LRUCache } from "lru-cache";
-import { Hex, UnicodeReader } from "@tkn/serializers";
+import { Hex, Unicode } from "@tkn/serializers";
 import { Lattice } from "../lattice";
 import type { ITokenizer, ITokenizerConfig } from "./tokenizer.domain";
 import type { ITokenizerMonitor, ITokenizerStats } from "./monitor.domain";
@@ -59,7 +59,9 @@ export class Tokenizer implements ITokenizer {
   // --- ITokenizer: core Viterbi decode --------------------------------
 
   decode(input: string): number[] {
-    const cps = UnicodeReader.stringToCodepoints(input);
+    this._monitor.start();
+    const cps = Unicode.fromString(input);
+    this._monitor.increment("codepointsIn", cps.length);
 
     const dp = new Map<number, number>(); // dp[i] = best score ending at offset i
     const back = new Map<number, [number, string]>(); // back[i] = [prevOffset, tokEsc]
@@ -139,6 +141,7 @@ export class Tokenizer implements ITokenizer {
       const id = this.idForEsc(esc);
       if (id !== null) ids.push(id);
     }
+    this._monitor.increment("tokensOut", ids.length);
     return ids;
   }
 
@@ -147,11 +150,12 @@ export class Tokenizer implements ITokenizer {
   }
 
   private findPrefixTokensEsc(cps: number[], offset: number): string[] {
+    this._monitor.increment("prefixLookups");
     const key = this.keyForCps(cps, offset);
     const cached = this._prefixLRU.get(key);
     if (cached) return cached;
 
-    const utf8 = UnicodeReader.codepointsToUtf8Bytes(cps.slice(offset));
+    const utf8 = Unicode.toUtf8Bytes(cps.slice(offset));
     const esc = Hex.fromBytes(utf8);
 
     const tokens = this._lattice.prefixSearch(esc).map((r) => r.bytes);
@@ -161,6 +165,7 @@ export class Tokenizer implements ITokenizer {
   }
 
   private transitionsFromEsc(prevEsc: string): TransPack {
+    this._monitor.increment("transitionLookups");
     const cached = this._transitions.get(prevEsc);
     if (cached) return cached;
 
@@ -196,7 +201,7 @@ export class Tokenizer implements ITokenizer {
     if (cached !== undefined) return cached;
     const td = new TextDecoder();
     const text = td.decode(new Uint8Array(Hex.toBytes(esc)));
-    const n = UnicodeReader.stringToCodepoints(text).length;
+    const n = Unicode.fromString(text).length;
     this._cpLenByEsc.set(esc, n);
     return n;
   }

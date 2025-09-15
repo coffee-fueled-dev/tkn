@@ -2,21 +2,20 @@ import { LRUCache } from "lru-cache";
 import type { ILZS, ILZSConfig } from "./lzs.domain";
 import type { IFlushResult, ILZSCache, IKeyGenerator } from "./_shared.domain";
 import { isILZSCache, isIKeyGenerator } from "./_shared.domain";
-import { ByteTrie, NoOpByteTrie } from "./byte-trie";
-import type { IByteTrie } from "./byte-trie.domain";
 import { RollingHash } from "@tkn/serializers";
 import { LZSMonitor, NoOpLZSMonitor } from "./monitor";
 import type { ILZSMonitor, IStats } from "./monitor.domain";
+import { NoOpLZSTrie } from "./trie";
+import type { ILZSTrie } from "./trie/domain";
 
 /**
- * Lempel-Ziv Stream Tokenizer (LZS) — refactored to use ByteTrie rolling cursor API.
- * - O(1) prefix checks via trie.cursorAdvance()
- * - O(1) emission by marking parent terminal via trie.insertPreviousOrMark()
+ * Lempel-Ziv Stream Tokenizer (LZS)
+ *
  */
 export class LZS implements ILZS {
   private _monitor: ILZSMonitor;
   private _enableMonitoring: boolean;
-  private _trie: IByteTrie;
+  private _trie: ILZSTrie;
   readonly _cache: ILZSCache;
   readonly _keyGenerator: IKeyGenerator;
   private _candidate: number[] | null = null;
@@ -56,34 +55,31 @@ export class LZS implements ILZS {
   // Keep track of the *previous* candidate key (for p(next|prev))
   private _lastCandidateKey: number | null = null;
 
-  // Pre-bound handlers
-  private _handleUnknownCandidate: (candidate: number[]) => number[];
-
   private readonly _trieRootFallback = false;
 
-  processByte(byte: number): number[] | null {
-    this.monitorBytesIn();
+  push(int: number): number[] | null {
+    this.monitorIntsIn();
 
-    const candidateKey = this._keyGenerator.update(byte);
+    const candidateKey = this._keyGenerator.update(int);
     const strength = this._cache.get(candidateKey) ?? 0;
 
     if (this._candidate === null) {
-      // Start a new candidate with first byte
-      this._candidate = [byte];
+      // Start a new candidate with first int
+      this._candidate = [int];
       this._cache.set(candidateKey, strength + 1);
       this.monitorCandidateStarted();
 
-      this._trie.cursorInitFirst(byte);
+      this._trie.cursorInitFirst(int);
 
-      // After first byte, previous-key is undefined; set lastCandidateKey= current
+      // After first int, previous-key is undefined; set lastCandidateKey= current
       this._lastCandidateKey = candidateKey; // MDL <<<
       return null;
     }
 
-    // Extend candidate by one byte
-    this._candidate.push(byte);
+    // Extend candidate by one int
+    this._candidate.push(int);
 
-    this._trie.cursorAdvance(byte, this._trieRootFallback);
+    this._trie.cursorAdvance(int, this._trieRootFallback);
 
     // Always maintain counts
     this._cache.set(candidateKey, strength + 1);
@@ -116,11 +112,11 @@ export class LZS implements ILZS {
 
     // All gates failed - emit the token
     this.monitorTokenEmission();
-    return this._handleUnknownCandidate(this._candidate);
+    return this.handleUnknownCandidate(this._candidate);
   }
   // Fast, allocation-free MDL-ish gate in probability space
-  private useMDLGate(candidateKey: number): boolean {
-    // previous candidate key before appending this byte
+  private useMDLGate = (candidateKey: number): boolean => {
+    // previous candidate key before appending this int
     const prevKey = this._lastCandidateKey;
     if (prevKey === null) return false;
 
@@ -177,118 +173,121 @@ export class LZS implements ILZS {
       return true;
     }
     return false;
-  }
+  };
 
-  // ---------- Emit handlers (O(1) on trie) ----------
-  private handleUnknownCandidate(candidate: number[]): number[] {
-    const lastByte = candidate[candidate.length - 1];
+  private handleUnknownCandidate = (candidate: number[]): number[] => {
+    const lastInt = candidate[candidate.length - 1];
     const previous = candidate.slice(0, -1);
 
-    this.monitorBytesOut(previous.length);
-    // Keep last byte as new 1-byte candidate
+    this.monitorIntsOut(previous.length);
+    // Keep last int as new 1-int candidate
     candidate.length = 1;
-    candidate[0] = lastByte;
+    candidate[0] = lastInt;
     this._keyGenerator.recalculate(candidate);
 
     // Mark parent terminal if known, else insert walk-once
     this._trie.insertPreviousOrMark(previous, 1);
-    // Re-seed cursor for the single-byte candidate
-    this._trie.resetToSingleByte(lastByte);
+    // Re-seed cursor for the single-int candidate
+    this._trie.resetToSingleValue(lastInt);
 
-    // After an emission, we no longer know the key for the *new* 1-byte candidate
-    // until the next update(byte) happens, so clear lastCandidateKey.
+    // After an emission, we no longer know the key for the *new* 1-int candidate
+    // until the next update(int) happens, so clear lastCandidateKey.
     this._lastCandidateKey = null; // MDL <<<
 
     return previous;
-  }
+  };
 
   // ---------- Monitor helpers ----------
-  private monitorBytesIn() {
+  private monitorIntsIn = () => {
     if (!this._enableMonitoring) return;
     this._monitor.start();
-    this._monitor.increment("bytesIn");
-  }
+    this._monitor.increment("intsIn");
+  };
 
-  private monitorBytesOut(bytes: number) {
+  private monitorIntsOut = (ints: number) => {
     if (!this._enableMonitoring) return;
-    this._monitor.increment("bytesOut", bytes);
-  }
+    this._monitor.increment("intsOut", ints);
+  };
 
-  private monitorCandidateStarted() {
+  private monitorCandidateStarted = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("candidatesStarted");
-  }
+  };
 
   // MDL Gate monitoring
-  private monitorMDLGateChecked() {
+  private monitorMDLGateChecked = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("mdlGateChecked");
-  }
+  };
 
-  private monitorMDLGatePassed() {
+  private monitorMDLGatePassed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("mdlGatePassed");
-  }
+  };
 
-  private monitorMDLGateFailed() {
+  private monitorMDLGateFailed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("mdlGateFailed");
-  }
+  };
 
   // Cache Gate monitoring
-  private monitorCacheGateChecked() {
+  private monitorCacheGateChecked = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("cacheGateChecked");
-  }
+  };
 
-  private monitorCacheGatePassed() {
+  private monitorCacheGatePassed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("cacheGatePassed");
-  }
+  };
 
-  private monitorCacheGateFailed() {
+  private monitorCacheGateFailed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("cacheGateFailed");
-  }
+  };
 
   // Trie Gate monitoring
-  private monitorTrieGateChecked() {
+  private monitorTrieGateChecked = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("trieGateChecked");
-  }
+  };
 
-  private monitorTrieGatePassed() {
+  private monitorTrieGatePassed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("trieGatePassed");
-  }
+  };
 
-  private monitorTrieGateFailed() {
+  private monitorTrieGateFailed = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("trieGateFailed");
-  }
+  };
 
   // Token emission monitoring
-  private monitorTokenEmission() {
+  private monitorTokenEmission = () => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("tokensEmitted");
     const deg = this._trie.childDegreeAtParent();
     if (deg > 0) this._monitor.increment("emissionHadLongerOptions");
     this._monitor.increment("emissionSumChildDegree", deg);
-  }
+  };
 
   // MDL algorithm metrics
-  private monitorMDLMetrics(surprisal: number, mean: number, std: number) {
+  private monitorMDLMetrics = (
+    surprisal: number,
+    mean: number,
+    std: number
+  ) => {
     if (!this._enableMonitoring) return;
     this._monitor.increment("mdlSumSurprisal", surprisal);
     this._monitor.increment("mdlSumBaselineMean", mean);
     this._monitor.increment("mdlSumBaselineStd", std);
-  }
+  };
 
   // ---------- Management API ----------
   flush(): IFlushResult {
     return {
       cache: this._cache,
-      current: this._candidate ? this._candidate : null,
+      current: this._candidate ? [this._candidate] : [],
     };
   }
 
@@ -320,14 +319,13 @@ export class LZS implements ILZS {
     return this._monitor.stats;
   }
 
-  // ---------- Ctor ----------
   constructor({ keyGenerator, cache, monitor, trie, mdl }: ILZSConfig = {}) {
     this._cache = isILZSCache(cache)
       ? cache
       : new LRUCache<number, number>({ max: cache?.size ?? 10_000 });
 
     // Trie
-    this._trie = trie ? new ByteTrie() : new NoOpByteTrie();
+    this._trie = trie ? trie : new NoOpLZSTrie();
 
     this._keyGenerator = isIKeyGenerator(keyGenerator)
       ? keyGenerator
@@ -357,7 +355,5 @@ export class LZS implements ILZS {
         : new NoOpLZSMonitor();
 
     this._enableMonitoring = this._monitor.config.mode !== "disabled";
-
-    this._handleUnknownCandidate = this.handleUnknownCandidate.bind(this);
   }
 }

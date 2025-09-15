@@ -7,7 +7,7 @@ import type {
   ILZSCache,
 } from "./_shared.domain";
 import type { LZSMonitor } from "./monitor";
-import type { ByteTrie } from "./byte-trie";
+import type { ILZSTrie } from "./trie";
 
 /**
  * Configuration interface for LZS instances
@@ -16,7 +16,7 @@ export interface ILZSConfig {
   keyGenerator?: IKeyGeneratorConfig | IKeyGenerator;
   cache?: ILZSCacheConfig | ILZSCache;
   monitor?: LZSMonitor | ILZSMonitorConfig | false;
-  trie?: ByteTrie | false;
+  trie?: ILZSTrie | false;
   mdl?: {
     alpha?: number; // default ~0.1 (Laplace smoothing)
     zMode?: "child-degree" | "fixed"; // default "child-degree"
@@ -42,7 +42,7 @@ export interface ILZS {
   readonly keyGenerator: IKeyGenerator;
 
   /**
-   * Current memory usage in bytes (platform dependent)
+   * Current memory usage in ints (platform dependent)
    */
   readonly memoryUsage: number;
 
@@ -52,15 +52,15 @@ export interface ILZS {
   readonly stats: IStats | null;
 
   /**
-   * Processes a single byte and returns the longest known subsequence if found
-   * @param byte The byte to process
-   * @returns Hex bytes string of the longest known subsequence, or null if pattern continues
+   * Processes a single int and returns the longest known subsequence if found
+   * @param int The int to process
+   * @returns Hex ints string of the longest known subsequence, or null if pattern continues
    */
-  processByte(byte: number): number[] | null;
+  push(int: number): number[] | null;
 
   /**
    * Flushes the current state and returns memory and current candidate
-   * @returns Object containing the cache memory and current candidate bytes
+   * @returns Object containing the cache memory and current candidate ints
    */
   flush(): IFlushResult;
 

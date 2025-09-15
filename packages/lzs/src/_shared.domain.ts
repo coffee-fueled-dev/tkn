@@ -3,7 +3,7 @@
  */
 export interface IFlushResult {
   cache: ILZSCache;
-  current: number[] | null;
+  current: number[][];
 }
 
 /**

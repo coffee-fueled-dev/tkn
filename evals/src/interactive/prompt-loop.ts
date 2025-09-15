@@ -2,7 +2,7 @@ import { Lattice, Tokenizer } from "@tkn/tokenizer";
 import * as readline from "readline";
 
 export function promptLoop(lattice: Lattice) {
-  const tokenizer = new Tokenizer({ lattice });
+  const tokenizer = new Tokenizer({ lattice, monitor: { mode: "extended" } });
 
   console.log("\n=== Interactive Tokenizer ===");
   console.log("Enter text to tokenize (or 'quit' to exit):");
@@ -25,12 +25,10 @@ export function promptLoop(lattice: Lattice) {
         try {
           const tokens = tokenizer.decode(input);
           const strings = tokenizer.toStrings(tokens);
-          const perplexity = tokenizer.computePerplexity(tokens);
 
           console.log("Tokens:", strings);
           console.log("Token IDs:", tokens);
-          console.log("Perplexity:", perplexity.perplexity.toFixed(2));
-          console.log("Transitions:", perplexity.transitions);
+          console.log("Stats:", tokenizer.stats);
           console.log("");
         } catch (error) {
           console.log("Error:", error);

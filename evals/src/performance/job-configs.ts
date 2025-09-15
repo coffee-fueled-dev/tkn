@@ -1,4 +1,3 @@
-import { NoOpByteTrie } from "../../../packages/lzs/src/byte-trie";
 import {
   jobProcessMetadata,
   type JobConfig,

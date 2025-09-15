@@ -24,8 +24,8 @@ export class LZSMonitor implements ILZSMonitor {
   }
   // Current counter values
   private _counters: Record<CounterType, number> = {
-    bytesIn: 0,
-    bytesOut: 0,
+    intsIn: 0,
+    intsOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,
@@ -46,8 +46,8 @@ export class LZSMonitor implements ILZSMonitor {
 
   // Batched pending updates
   private _pending: Record<CounterType, number> = {
-    bytesIn: 0,
-    bytesOut: 0,
+    intsIn: 0,
+    intsOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,
@@ -74,8 +74,8 @@ export class LZSMonitor implements ILZSMonitor {
   increment(counter: CounterType, amount = 1): void {
     // Always track basic performance metrics regardless of mode
     const isBasicCounter =
-      counter === "bytesIn" ||
-      counter === "bytesOut" ||
+      counter === "intsIn" ||
+      counter === "intsOut" ||
       counter === "candidatesStarted" ||
       counter === "tokensEmitted";
     if (!(this._mode === "extended") && !isBasicCounter) return;
@@ -141,9 +141,9 @@ export class LZSMonitor implements ILZSMonitor {
     return {
       // Basic performance
       durationMS,
-      bytesIn: counters.bytesIn,
-      bytesOut: counters.bytesOut,
-      rateMBs: (counters.bytesOut * 0.000001) / (durationMS / 1000),
+      intsIn: counters.intsIn,
+      intsOut: counters.intsOut,
+      rateMBs: (counters.intsOut * 0.000001) / (durationMS / 1000),
 
       // Candidate flow
       candidatesStarted: counters.candidatesStarted,
@@ -201,8 +201,8 @@ export class NoOpLZSMonitor implements ILZSMonitor {
 
   // Current counter values
   private _counters: Record<CounterType, number> = {
-    bytesIn: 0,
-    bytesOut: 0,
+    intsIn: 0,
+    intsOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,

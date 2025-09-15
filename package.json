@@ -17,7 +17,8 @@
     "eval:engmd": "bun run --elide-lines 0 --filter @tkn/evals eval:english-medium",
     "eval:englg": "bun run --elide-lines 0 --filter @tkn/evals eval:english-large",
     "eval:cross": "bun run --elide-lines 0 --filter @tkn/evals eval:cross-lingual",
-    "eval:perf": "bun run --elide-lines 0 --filter @tkn/evals eval:performance"
+    "eval:perf": "bun run --elide-lines 0 --filter @tkn/evals eval:performance",
+    "eval:interactive": "cd evals && bun run --elide-lines 0 eval:interactive"
   },
   "devDependencies": {
     "@types/bun": "latest"

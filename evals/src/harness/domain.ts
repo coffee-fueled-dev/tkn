@@ -1,7 +1,7 @@
-import type { IIngestConfig, Ingest, ITokenizerStats } from "@tkn/tokenizer";
+import type { IIngestConfig, Ingest } from "@tkn/tokenizer";
 import type { SourceResult, Source, SampleResult } from "./process-source";
 import type { BunFile } from "bun";
-import { type ILZSConfig, type LZS, ByteTrie } from "@tkn/lzs";
+import { type ILZSConfig, type LZS } from "@tkn/lzs";
 
 export interface Sample {
   content: string;
@@ -50,7 +50,6 @@ export const DEFAULT_CONFIG: TrainingConfig = {
   lzs: {
     cache: { size: 70_000 },
     monitor: { mode: "extended" },
-    trie: new ByteTrie(),
     mdl: {
       alpha: 0.1,
       zMode: "child-degree",

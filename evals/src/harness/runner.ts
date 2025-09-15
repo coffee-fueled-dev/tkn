@@ -1,5 +1,4 @@
 import { Lattice } from "@tkn/tokenizer";
-import { UnicodeReader } from "@tkn/serializers";
 
 import {
   type JobConfig,
@@ -15,6 +14,7 @@ import {
   type Source,
   type SampleResult,
 } from "./process-source";
+import { Unicode } from "@tkn/serializers";
 
 export class JobRunner implements IJobRunner {
   private _sharedConfig?: TrainingConfig;
@@ -101,19 +101,7 @@ export class JobRunner implements IJobRunner {
       return source as Source;
     }
 
-    // If it's a BunFile, convert to Source using UnicodeReader pattern
-    const text = await source.text();
-    const codepoints = UnicodeReader.stringToCodepoints(text);
-
-    // Create an async iterable source that yields chunks of codepoints
-    return {
-      async *[Symbol.asyncIterator]() {
-        const chunkSize = 8192;
-        for (let i = 0; i < codepoints.length; i += chunkSize) {
-          yield codepoints.slice(i, i + chunkSize);
-        }
-      },
-    };
+    return Unicode.stream(source, 8192);
   }
 
   private async evaluateSamples(
@@ -163,9 +151,7 @@ export class JobRunner implements IJobRunner {
         console.log(
           `  🔧 Tokenizer: ${result.tokenizerStats.rateTokPerSec.toFixed(
             1
-          )} tok/s, ${result.tokenizerStats.greedySteps} greedy, ${
-            result.tokenizerStats.viterbiWindows
-          } viterbi`
+          )} tok/s`
         );
       }
     } else if (sampleConfig.logProgress) {

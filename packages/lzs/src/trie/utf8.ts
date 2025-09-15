@@ -1,18 +1,27 @@
-import type { IByteTrie } from "./byte-trie.domain";
+import type { ILZSTrie, NodeId } from "./domain";
 
-type NodeId = number;
+// Map two signed sentinels into an extended alphabet.
+const ALPHABET_SIZE = 258; // 0..255 bytes + 256(-1), 257(-2)
+
+function symIndex(b: number): number {
+  if (b === -1) return 256;
+  if (b === -2) return 257;
+  // hard guard to catch unexpected symbols early
+  if (b < 0 || b > 255) throw new RangeError(`UTF8Trie: invalid symbol ${b}`);
+  return b & 0xff;
+}
 
 /**
- * Write-optimized ByteTrie
- * - Flat edge map: edges.get(nodeId * 257 + byte) -> childId
+ * Write-optimized UTF8Trie (supports -1/-2 sentinels)
+ * - Flat edge map: edges.get(nodeId * ALPHABET_SIZE + symIndex(b)) -> childId
  * - O(1) child counts
  * - Typed arrays for terminals/strength/lastSeen with exponential growth
  * - Rolling cursor API for streaming
  */
-export class ByteTrie implements IByteTrie {
+export class UTF8Trie implements ILZSTrie {
   private nextId: NodeId = 1; // 0 = root
 
-  // Global edge map: key(node, byte) -> child node
+  // Global edge map: key(node, symbol) -> child node
   private edges = new Map<number, NodeId>();
 
   // Per-node metadata (grown as needed)
@@ -22,17 +31,17 @@ export class ByteTrie implements IByteTrie {
   private strength = new Uint32Array(this.capacity); // frequency/weight
   private lastSeen = new Float64Array(this.capacity); // tick or timestamp (optional)
 
-  // Rolling cursor: end node for current candidate, and its parent (candidate without last byte)
+  // Rolling cursor: end node for current candidate, and its parent
   private _cur: NodeId = -1;
   private _par: NodeId = -1;
 
   // ---- helpers ----
-  private static edgeKey(node: NodeId, b: number): number {
-    // node * 257 + b is unique for 0<=b<256 and exact under 53-bit integers
-    return node * 257 + (b & 0xff);
-  }
+  private static edgeKey = (node: NodeId, b: number): number => {
+    // Unique for node and mapped symbol under JS 53-bit ints
+    return node * ALPHABET_SIZE + symIndex(b);
+  };
 
-  private ensureCapacity(minIdExclusive: number): void {
+  private ensureCapacity = (minIdExclusive: number): void => {
     if (minIdExclusive < this.capacity) return;
     let cap = this.capacity;
     while (cap <= minIdExclusive) cap <<= 1;
@@ -54,22 +63,22 @@ export class ByteTrie implements IByteTrie {
     this.lastSeen = ls;
 
     this.capacity = cap;
-  }
+  };
 
   // ---- Core API ----
 
-  root(): NodeId {
+  root = (): NodeId => {
     return 0;
-  }
+  };
 
-  /** Return child node for byte `b` or undefined if edge doesn't exist. */
-  child(node: NodeId, b: number): NodeId | undefined {
-    return this.edges.get(ByteTrie.edgeKey(node, b));
-  }
+  /** Return child node for byte/sentinel `b` or undefined if edge doesn't exist. */
+  child = (node: NodeId, b: number): NodeId | undefined => {
+    return this.edges.get(UTF8Trie.edgeKey(node, b));
+  };
 
   /** Ensure child exists; create if missing (fast, single Map write). */
-  ensureChild(node: NodeId, b: number): NodeId {
-    const k = ByteTrie.edgeKey(node, b);
+  ensureChild = (node: NodeId, b: number): NodeId => {
+    const k = UTF8Trie.edgeKey(node, b);
     const hit = this.edges.get(k);
     if (hit !== undefined) return hit;
 
@@ -78,89 +87,83 @@ export class ByteTrie implements IByteTrie {
     this.edges.set(k, nid);
     this.childCount[node] += 1;
     return nid;
-  }
+  };
 
   /** Mark node as terminal and bump optional counters. */
-  markTerminal(node: NodeId, strengthInc = 1, tick?: number) {
+  markTerminal = (node: NodeId, strengthInc = 1, tick?: number) => {
     this.terminal[node] = 1;
     if (strengthInc) this.strength[node] += strengthInc >>> 0;
     if (tick !== undefined) this.lastSeen[node] = tick;
-  }
+  };
 
-  /** Insert bytes as a token path; increments terminal strength. */
-  insertToken(
+  /** Insert a token path of bytes/sentinels; increments terminal strength. */
+  insertToken = (
     bytes: ArrayLike<number>,
     strengthInc = 1,
     tick?: number
-  ): NodeId {
+  ): NodeId => {
     let n = 0;
     for (let i = 0; i < bytes.length; i++) {
-      n = this.ensureChild(n, bytes[i] & 0xff);
+      n = this.ensureChild(n, bytes[i]);
     }
     this.markTerminal(n, strengthInc, tick);
     return n;
-  }
+  };
 
   /** True if `bytes` is a full prefix path present in the trie. */
-  hasPrefix(bytes: ArrayLike<number>): boolean {
+  hasPrefix = (bytes: ArrayLike<number>): boolean => {
     let n = 0;
     for (let i = 0; i < bytes.length; i++) {
-      const child = this.edges.get(ByteTrie.edgeKey(n, bytes[i] & 0xff));
+      const child = this.edges.get(UTF8Trie.edgeKey(n, bytes[i]));
       if (child === undefined) return false;
       n = child;
     }
     return true;
-  }
+  };
 
   /** O(1): Number of immediate children given a nodeId. */
-  childDegreeById(node: NodeId): number {
+  childDegreeById = (node: NodeId): number => {
     return this.childCount[node] | 0;
-  }
+  };
 
   /** O(len(bytes)): Number of immediate children for a prefix. */
-  childDegree(bytes: ArrayLike<number>): number {
+  childDegree = (bytes: ArrayLike<number>): number => {
     let n = 0;
     for (let i = 0; i < bytes.length; i++) {
-      const child = this.edges.get(ByteTrie.edgeKey(n, bytes[i] & 0xff));
+      const child = this.edges.get(UTF8Trie.edgeKey(n, bytes[i]));
       if (child === undefined) return 0;
       n = child;
     }
     return this.childCount[n] | 0;
-  }
+  };
 
-  isTerminal(node: NodeId): boolean {
+  isTerminal = (node: NodeId): boolean => {
     return this.terminal[node] === 1;
-  }
-  getStrength(node: NodeId): number {
+  };
+  getStrength = (node: NodeId): number => {
     return this.strength[node] | 0;
-  }
+  };
 
   // ---- Rolling cursor API ----
 
   /** Clear streaming cursor state. */
-  cursorReset(): void {
+  cursorReset = (): void => {
     this._cur = -1;
     this._par = -1;
-  }
+  };
 
-  /**
-   * Initialize cursor for the very first byte of a new candidate.
-   * Sets parent to root (0) and cursor to child(root, byte) if it exists.
-   */
-  cursorInitFirst(byte: number): void {
+  /** Initialize cursor for the very first symbol of a new candidate. */
+  cursorInitFirst = (byte: number): void => {
     this._par = 0; // root
     const c = this.child(0, byte);
     this._cur = c === undefined ? -1 : c;
-  }
+  };
 
   /**
-   * Advance cursor by one byte in O(1).
-   * - If we had a known path (_cur>=0), parent becomes _cur.
-   * - Try to extend from that parent.
-   * - If not found and tryRootFallback=true, also check child(root, byte).
-   * Returns true if the extended candidate is still a known prefix.
+   * Advance cursor by one symbol in O(1).
+   * If not found and tryRootFallback, also check child(root, byte).
    */
-  cursorAdvance(byte: number, tryRootFallback = false): boolean {
+  cursorAdvance = (byte: number, tryRootFallback = false): boolean => {
     const prevCur = this._cur;
     this._par = prevCur >= 0 ? prevCur : -1;
 
@@ -169,98 +172,62 @@ export class ByteTrie implements IByteTrie {
       child = this.child(prevCur, byte);
     } else if (tryRootFallback) {
       child = this.child(0, byte);
-      // If we “restarted” from root, we should set parent accordingly
       this._par = 0;
     }
 
     this._cur = child === undefined ? -1 : child;
     return this._cur >= 0;
-  }
+  };
 
   /** Is the current candidate a valid trie prefix? */
-  cursorValid(): boolean {
+  cursorValid = (): boolean => {
     return this._cur >= 0;
-  }
+  };
 
-  /** Is the previous prefix (candidate without last byte) valid? */
-  parentValid(): boolean {
+  /** Is the previous prefix (candidate without last symbol) valid? */
+  parentValid = (): boolean => {
     return this._par >= 0;
-  }
+  };
 
   /** O(1) child degree for the parent node if valid; else 0. */
-  childDegreeAtParent(): number {
+  childDegreeAtParent = (): number => {
     return this._par >= 0 ? this.childCount[this._par] | 0 : 0;
-  }
+  };
 
   /** O(1) terminal mark on the parent node if valid. */
-  markParentTerminal(strengthInc = 1, tick?: number): void {
+  markParentTerminal = (strengthInc = 1, tick?: number): void => {
     if (this._par >= 0) this.markTerminal(this._par, strengthInc, tick);
-  }
+  };
 
-  /**
-   * After emitting 'previous' and keeping the last byte as the new candidate,
-   * reset cursor to that single byte in O(1).
-   */
-  resetToSingleByte(byte: number): void {
+  /** After emitting 'previous' and keeping the last symbol, reset to that single symbol. */
+  resetToSingleValue = (byte: number): void => {
     this._par = 0;
     const c = this.child(0, byte);
     this._cur = c === undefined ? -1 : c;
-  }
+  };
 
   /**
    * Hide the “mark parent or insert” emission pattern:
    * - If parent is valid: mark terminal on parent (O(1)).
    * - Else: insert the full previous token (walk once).
    */
-  insertPreviousOrMark(
+  insertPreviousOrMark = (
     previous: ArrayLike<number>,
     strengthInc = 1,
     tick?: number
-  ): void {
+  ): void => {
     if (this._par >= 0) {
       this.markTerminal(this._par, strengthInc, tick);
     } else {
       this.insertToken(previous, strengthInc, tick);
     }
-  }
+  };
 
   // Optional getters (useful for monitors/debug):
-  getCursor(): number {
+  getCursor = (): number => {
     return this._cur;
-  }
-  getParent(): number {
+  };
+  getParent = (): number => {
     return this._par;
-  }
-}
-
-export class NoOpByteTrie implements IByteTrie {
-  root = (): NodeId => 0;
-  child = (_node: NodeId, _b: number): NodeId | undefined => undefined;
-  ensureChild = (_node: NodeId, _b: number): NodeId => 0;
-  markTerminal = (_node: NodeId, _strengthInc = 1, _tick?: number): void => {};
-  insertToken = (
-    _bytes: ArrayLike<number>,
-    _strengthInc = 1,
-    _tick?: number
-  ): NodeId => 0;
-  hasPrefix = (_bytes: ArrayLike<number>): boolean => false;
-  childDegreeById = (_node: NodeId): number => 0;
-  childDegree = (_bytes: ArrayLike<number>): number => 0;
-  isTerminal = (_node: NodeId): boolean => false;
-  getStrength = (_node: NodeId): number => 0;
-  cursorReset = (): void => {};
-  cursorInitFirst = (_byte: number): void => {};
-  cursorAdvance = (_byte: number, _tryRootFallback = false): boolean => true;
-  cursorValid = (): boolean => false;
-  parentValid = (): boolean => false;
-  childDegreeAtParent = (): number => 0;
-  markParentTerminal = (_strengthInc = 1, _tick?: number): void => {};
-  resetToSingleByte = (_byte: number): void => {};
-  insertPreviousOrMark = (
-    _previous: ArrayLike<number>,
-    _strengthInc = 1,
-    _tick?: number
-  ): void => {};
-  getCursor = (): number => 0;
-  getParent = (): number => 0;
+  };
 }
