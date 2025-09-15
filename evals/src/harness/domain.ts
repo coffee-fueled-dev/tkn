@@ -1,5 +1,6 @@
 import type { IIngestConfig, Ingest } from "@tkn/tokenizer";
-import type { SourceResult, Source, SampleResult } from "./process-source";
+import type { SourceResult, Source } from "./process-source";
+import type { SampleResult } from "./process-sample";
 import type { BunFile } from "bun";
 import { type ILZSConfig, type LZS } from "@tkn/lzs";
 

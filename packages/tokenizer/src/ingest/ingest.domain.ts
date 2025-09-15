@@ -1,4 +1,4 @@
-import type { Lattice, ILatticeConfig } from "../lattice";
+import type { Lattice, ILatticeConfig, R_LatticeStats } from "../lattice";
 
 export interface IIngestConfig {
   batchSize?: number;
@@ -29,7 +29,7 @@ export interface IIngest {
   /**
    * Get current ingestion statistics
    */
-  readonly stats: any | null; // TODO: Define proper stats interface
+  readonly stats: R_LatticeStats | null;
 
   /**
    * Buffer a token (hex string). Commits when the buffer reaches batchSize

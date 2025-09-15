@@ -11,12 +11,10 @@ async function main() {
     logProgress: false,
     lzs: { monitor: { mode: "extended" } },
   });
-  const results = [];
 
   for (const jobConfig of PERFORMANCE_JOBS) {
     try {
-      const result = await runner.run(jobConfig);
-      results.push(result);
+      await runner.run(jobConfig);
     } catch (error) {
       console.error(
         `❌ Failed to process ${jobConfig.metadata?.language}:`,
@@ -24,14 +22,6 @@ async function main() {
       );
     }
   }
-
-  console.log(
-    JSON.stringify(
-      results.map(({ samples, ...r }) => r),
-      null,
-      2
-    )
-  );
 }
 
 main().catch(console.error);

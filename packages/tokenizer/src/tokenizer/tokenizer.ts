@@ -60,6 +60,7 @@ export class Tokenizer implements ITokenizer {
 
   decode(input: string): number[] {
     this._monitor.start();
+    this._monitor.startInference();
     const cps = Unicode.fromString(input);
     this._monitor.increment("codepointsIn", cps.length);
 

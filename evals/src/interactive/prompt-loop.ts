@@ -1,5 +1,6 @@
 import { Lattice, Tokenizer } from "@tkn/tokenizer";
 import * as readline from "readline";
+import { logSampleResult } from "../harness";
 
 export function promptLoop(lattice: Lattice) {
   const tokenizer = new Tokenizer({ lattice, monitor: { mode: "extended" } });
@@ -26,10 +27,12 @@ export function promptLoop(lattice: Lattice) {
           const tokens = tokenizer.decode(input);
           const strings = tokenizer.toStrings(tokens);
 
-          console.log("Tokens:", strings);
-          console.log("Token IDs:", tokens);
-          console.log("Stats:", tokenizer.stats);
-          console.log("");
+          logSampleResult({
+            content: input,
+            tokens,
+            strings,
+            tokenizerStats: tokenizer.stats,
+          });
         } catch (error) {
           console.log("Error:", error);
         }

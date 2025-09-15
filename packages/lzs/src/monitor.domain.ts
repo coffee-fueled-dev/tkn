@@ -3,8 +3,8 @@
  */
 export type CounterType =
   // Input metrics
-  | "intsIn"
-  | "intsOut"
+  | "eventsIn"
+  | "tokensOut"
   | "candidatesStarted"
 
   // Gate decision metrics (continue vs emit)
@@ -34,9 +34,9 @@ export type CounterType =
 export interface IStats {
   // Basic performance
   durationMS: number;
-  intsIn: number;
-  intsOut: number;
-  rateMBs: number;
+  eventsIn: number;
+  tokensOut: number;
+  tokensPerSecond: number;
 
   // Candidate flow
   candidatesStarted: number;

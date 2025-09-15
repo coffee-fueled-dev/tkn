@@ -8,13 +8,9 @@ import {
   type TrainingConfig,
   DEFAULT_CONFIG,
 } from "./domain";
-import {
-  processSource,
-  processSample,
-  type Source,
-  type SampleResult,
-} from "./process-source";
+import { processSource, type Source } from "./process-source";
 import { Unicode } from "@tkn/serializers";
+import { processSample, type SampleResult } from "./process-sample";
 
 export class JobRunner implements IJobRunner {
   private _sharedConfig?: TrainingConfig;
@@ -24,27 +20,19 @@ export class JobRunner implements IJobRunner {
   }
 
   async run(config: Partial<JobConfig>): Promise<JobResult> {
-    if (!config.source) {
-      throw new Error("Source is required");
-    }
-    if (!config.sampleConfig) {
-      throw new Error("Sample config is required");
-    }
-    if (!config.process) {
-      throw new Error("Process config is required");
-    }
+    if (!config.source) throw new Error("Source is required");
+    if (!config.sampleConfig) throw new Error("Sample config is required");
+    if (!config.process) throw new Error("Process config is required");
+
     const mergedConfig = {
       ...DEFAULT_CONFIG,
       ...this._sharedConfig,
       ...config.trainingConfig,
     };
 
-    console.log(
-      `🚀 Starting job\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
-    );
+    logJobStart(config as JobConfig);
 
     // Training phase
-    console.log(`📚 Training tokenizer`);
     const source = await this.normalizeSource(config.source);
 
     // Pass the configs down to processSource - it will handle instance creation
@@ -53,18 +41,23 @@ export class JobRunner implements IJobRunner {
       ...mergedConfig,
     });
 
+    let result: JobResult = {
+      training: trainingResult,
+      metadata: config.metadata,
+      process: { ...config.process, duration: performance.now() },
+    };
+
     if (!config.sampleConfig.run) {
-      console.log(
-        `✨ Job complete\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
-      );
-      return {
-        training: trainingResult,
-        metadata: config.metadata,
-        process: { ...config.process, duration: performance.now() },
-      };
+      logTrainingResult(result.training);
+      logJobResult(result);
+      return result;
     }
 
     if (!config.sampleConfig.samples) {
+      console.log(
+        `Job failed: Samples are required when sampleConfig.run is set to true`
+      );
+      console.table([config.metadata]);
       throw new Error(
         "Samples are required when sampleConfig.run is set to true"
       );
@@ -72,7 +65,7 @@ export class JobRunner implements IJobRunner {
 
     // Evaluation phase
     console.log(
-      `🧪 Tokenizing samples (${config.sampleConfig.samples.length} samples)`
+      `Tokenizing samples (${config.sampleConfig.samples.length} samples)`
     );
     const sampleResults = await this.evaluateSamples(
       config.sampleConfig.samples,
@@ -80,11 +73,7 @@ export class JobRunner implements IJobRunner {
       ingest?.lattice
     );
 
-    console.log(
-      `✨ Job complete\n${JSON.stringify(config.metadata, null, 2) ?? ""}`
-    );
-
-    return {
+    result = {
       training: trainingResult,
       metadata: config.metadata,
       samples: {
@@ -93,6 +82,10 @@ export class JobRunner implements IJobRunner {
       },
       process: { ...config.process, duration: performance.now() },
     };
+
+    logTrainingResult(result.training);
+    logJobResult(result);
+    return result;
   }
 
   private async normalizeSource(source: JobConfig["source"]): Promise<Source> {
@@ -114,7 +107,7 @@ export class JobRunner implements IJobRunner {
     for (const sample of samples) {
       if (sampleConfig.logProgress) {
         console.log(
-          `🔍 Evaluating: "${sample.content.substring(0, 50)}${
+          `Evaluating: "${sample.content.substring(0, 50)}${
             sample.content.length > 50 ? "..." : ""
           }"`
         );
@@ -128,37 +121,56 @@ export class JobRunner implements IJobRunner {
         });
 
         results.push(result);
-        this.logSampleResult(result, sampleConfig);
+        logSampleResult(result);
       } catch (error) {
-        console.warn(`⚠️ Failed to tokenize: "${sample.content}" - ${error}`);
+        console.warn(`Failed to tokenize: "${sample.content}" - ${error}`);
       }
     }
 
     return results;
   }
+}
 
-  private logSampleResult(
-    result: SampleResult,
-    sampleConfig: JobConfig["sampleConfig"]
-  ): void {
-    if (sampleConfig.logTokens) {
-      console.log(
-        `  📋 Tokens (${result.tokens.length}):\n[${result.strings.join(
-          " | "
-        )}]\n[${result.tokens.join(" | ")}]`
-      );
-      if (result.tokenizerStats) {
-        console.log(
-          `  🔧 Tokenizer: ${result.tokenizerStats.rateTokPerSec.toFixed(
-            1
-          )} tok/s`
-        );
-      }
-    } else if (sampleConfig.logProgress) {
-      const tokRate = result.tokenizerStats
-        ? ` (${result.tokenizerStats.rateTokPerSec.toFixed(1)} tok/s)`
-        : "";
-      console.log(`  ✅ ${result.tokens.length} tokens${tokRate}`);
-    }
+export function logJobStart(config: JobConfig) {
+  console.log(`Starting job`);
+  console.table([config.metadata]);
+
+  if (config.process) {
+    console.log("\nProcess Info:");
+    console.table([config.process]);
   }
+}
+
+export function logJobResult(result: JobResult) {
+  console.log(`Job completed`);
+  console.table([result.metadata]);
+
+  if (result.process) {
+    console.log("\nProcess Info:");
+    console.table([result.process]);
+  }
+}
+
+export function logTrainingResult(result: JobResult["training"]) {
+  if (result?.lzs) {
+    console.log("\nLZS Training Stats:");
+    console.table(result.lzs);
+  }
+
+  if (result?.lattice) {
+    console.log("\nLattice Stats:");
+    console.table(result.lattice);
+  }
+}
+
+export function logSampleResult(result: SampleResult) {
+  // Create object with strings as keys and tokens as values
+  const tokenTable = result.strings.reduce((acc, str, i) => {
+    acc[str] = result.tokens[i];
+    return acc;
+  }, {} as Record<string, number>);
+
+  console.table([tokenTable]);
+  console.table([result.tokenizerStats?.lastInference]);
+  console.log("");
 }

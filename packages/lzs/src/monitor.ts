@@ -24,8 +24,8 @@ export class LZSMonitor implements ILZSMonitor {
   }
   // Current counter values
   private _counters: Record<CounterType, number> = {
-    intsIn: 0,
-    intsOut: 0,
+    eventsIn: 0,
+    tokensOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,
@@ -46,8 +46,8 @@ export class LZSMonitor implements ILZSMonitor {
 
   // Batched pending updates
   private _pending: Record<CounterType, number> = {
-    intsIn: 0,
-    intsOut: 0,
+    eventsIn: 0,
+    tokensOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,
@@ -74,8 +74,8 @@ export class LZSMonitor implements ILZSMonitor {
   increment(counter: CounterType, amount = 1): void {
     // Always track basic performance metrics regardless of mode
     const isBasicCounter =
-      counter === "intsIn" ||
-      counter === "intsOut" ||
+      counter === "eventsIn" ||
+      counter === "tokensOut" ||
       counter === "candidatesStarted" ||
       counter === "tokensEmitted";
     if (!(this._mode === "extended") && !isBasicCounter) return;
@@ -140,10 +140,12 @@ export class LZSMonitor implements ILZSMonitor {
 
     return {
       // Basic performance
-      durationMS,
-      intsIn: counters.intsIn,
-      intsOut: counters.intsOut,
-      rateMBs: (counters.intsOut * 0.000001) / (durationMS / 1000),
+      durationMS: Number(durationMS.toFixed(3)),
+      eventsIn: counters.eventsIn,
+      tokensOut: counters.tokensOut,
+      tokensPerSecond: Number(
+        ((counters.tokensOut / durationMS) * 1000).toFixed(0)
+      ),
 
       // Candidate flow
       candidatesStarted: counters.candidatesStarted,
@@ -153,39 +155,65 @@ export class LZSMonitor implements ILZSMonitor {
       mdlGateChecked: counters.mdlGateChecked,
       mdlGatePassed: counters.mdlGatePassed,
       mdlGateFailRate: counters.mdlGateChecked
-        ? counters.mdlGateFailed / counters.mdlGateChecked
+        ? Number(
+            (counters.mdlGateFailed / counters.mdlGateChecked).toPrecision(2)
+          )
         : 0,
 
       cacheGateChecked: counters.cacheGateChecked,
       cacheGatePassed: counters.cacheGatePassed,
       cacheGateFailRate: counters.cacheGateChecked
-        ? counters.cacheGateFailed / counters.cacheGateChecked
+        ? Number(
+            (counters.cacheGateFailed / counters.cacheGateChecked).toPrecision(
+              2
+            )
+          )
         : 0,
 
       trieGateChecked: counters.trieGateChecked,
       trieGatePassed: counters.trieGatePassed,
       trieGateFailRate: counters.trieGateChecked
-        ? counters.trieGateFailed / counters.trieGateChecked
+        ? Number(
+            (counters.trieGateFailed / counters.trieGateChecked).toPrecision(2)
+          )
         : 0,
 
       // Emission quality metrics
       emissionHadLongerOptions: counters.emissionHadLongerOptions,
       emissionMissedExtensionRate: counters.tokensEmitted
-        ? counters.emissionHadLongerOptions / counters.tokensEmitted
+        ? Number(
+            (
+              counters.emissionHadLongerOptions / counters.tokensEmitted
+            ).toPrecision(2)
+          )
         : 0,
       emissionAvgChildDegree: counters.tokensEmitted
-        ? counters.emissionSumChildDegree / counters.tokensEmitted
+        ? Number(
+            (
+              counters.emissionSumChildDegree / counters.tokensEmitted
+            ).toPrecision(2)
+          )
         : 0,
 
       // MDL algorithm insights
       avgMDLSurprisal: counters.mdlGateChecked
-        ? counters.mdlSumSurprisal / counters.mdlGateChecked
+        ? Number(
+            (counters.mdlSumSurprisal / counters.mdlGateChecked).toPrecision(2)
+          )
         : 0,
       mdlBaselineMean: counters.mdlGateChecked
-        ? counters.mdlSumBaselineMean / counters.mdlGateChecked
+        ? Number(
+            (counters.mdlSumBaselineMean / counters.mdlGateChecked).toPrecision(
+              2
+            )
+          )
         : 0,
       mdlBaselineStd: counters.mdlGateChecked
-        ? counters.mdlSumBaselineStd / counters.mdlGateChecked
+        ? Number(
+            (counters.mdlSumBaselineStd / counters.mdlGateChecked).toPrecision(
+              2
+            )
+          )
         : 0,
     };
   }
@@ -201,8 +229,8 @@ export class NoOpLZSMonitor implements ILZSMonitor {
 
   // Current counter values
   private _counters: Record<CounterType, number> = {
-    intsIn: 0,
-    intsOut: 0,
+    eventsIn: 0,
+    tokensOut: 0,
     candidatesStarted: 0,
     mdlGateChecked: 0,
     mdlGatePassed: 0,

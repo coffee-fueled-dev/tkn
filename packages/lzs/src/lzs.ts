@@ -58,7 +58,7 @@ export class LZS implements ILZS {
   private readonly _trieRootFallback = false;
 
   push(int: number): number[] | null {
-    this.monitorIntsIn();
+    this.monitorEventsIn();
 
     const candidateKey = this._keyGenerator.update(int);
     const strength = this._cache.get(candidateKey) ?? 0;
@@ -179,7 +179,7 @@ export class LZS implements ILZS {
     const lastInt = candidate[candidate.length - 1];
     const previous = candidate.slice(0, -1);
 
-    this.monitorIntsOut(previous.length);
+    this.monitorTokensOut();
     // Keep last int as new 1-int candidate
     candidate.length = 1;
     candidate[0] = lastInt;
@@ -198,15 +198,15 @@ export class LZS implements ILZS {
   };
 
   // ---------- Monitor helpers ----------
-  private monitorIntsIn = () => {
+  private monitorEventsIn = () => {
     if (!this._enableMonitoring) return;
     this._monitor.start();
-    this._monitor.increment("intsIn");
+    this._monitor.increment("eventsIn");
   };
 
-  private monitorIntsOut = (ints: number) => {
+  private monitorTokensOut = () => {
     if (!this._enableMonitoring) return;
-    this._monitor.increment("intsOut", ints);
+    this._monitor.increment("tokensOut");
   };
 
   private monitorCandidateStarted = () => {
