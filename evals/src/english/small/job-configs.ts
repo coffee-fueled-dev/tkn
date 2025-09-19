@@ -1,51 +1,11 @@
-import { LZS, LZSBoundary } from "@tkn/lzs";
-import {
-  jobProcessMetadata,
-  type JobConfig,
-  type TrainingConfig,
-} from "../../harness";
+import type { JobConfig } from "@tkn/pipelines";
 import { resolveFile } from "../../resolve-file";
-import { englishSamples } from "../../samples";
 
-export const ENGLISH_SMALL_JOBS: (Omit<JobConfig, "trainingConfig"> & {
-  trainingConfig?: TrainingConfig;
-})[] = [
+export const ENGLISH_SMALL_JOBS: JobConfig[] = [
   {
-    process: jobProcessMetadata(),
-    source: resolveFile("tinystories_100.txt"),
-    sampleConfig: {
-      run: true,
-      logTokens: false,
-      logProgress: false,
-      samples: englishSamples,
-    },
-    trainingConfig: {
-      lzs: new LZS({
-        monitor: { mode: "extended" },
-      }),
-    },
-    metadata: {
-      language: "English -- LZS",
-      code: "en",
-    },
-  },
-  {
-    process: jobProcessMetadata(),
-    source: resolveFile("tinystories_100.txt"),
-    sampleConfig: {
-      run: true,
-      logTokens: true,
-      logProgress: true,
-      samples: englishSamples,
-    },
-    trainingConfig: {
-      lzs: new LZSBoundary(new LZS(), {
-        monitor: { mode: "extended" },
-      }),
-    },
-    metadata: {
-      language: "English -- Stacked LZS",
-      code: "en",
+    source: resolveFile("tinystories_1000.txt"),
+    meta: {
+      name: "tinystories_1000",
     },
   },
 ];

@@ -1,10 +1,8 @@
-import { Lattice, Tokenizer } from "@tkn/tokenizer";
 import * as readline from "readline";
-import { logSampleResult } from "../harness";
+import type { Lattice } from "@tkn/lattice";
+import { Unicode } from "@tkn/pipelines";
 
 export function promptLoop(lattice: Lattice) {
-  const tokenizer = new Tokenizer({ lattice, monitor: { mode: "extended" } });
-
   console.log("\n=== Interactive Tokenizer ===");
   console.log("Enter text to tokenize (or 'quit' to exit):");
 
@@ -18,21 +16,15 @@ export function promptLoop(lattice: Lattice) {
       if (input.toLowerCase() === "quit" || input.toLowerCase() === "exit") {
         console.log("Goodbye!");
         rl.close();
-        lattice.close();
         return;
       }
 
       if (input.trim()) {
         try {
-          const tokens = tokenizer.decode(input);
-          const strings = tokenizer.toStrings(tokens);
+          const tokens = lattice.tokens(Unicode.fromString(input));
+          const strings = lattice.ints(tokens).map(Unicode.toString);
 
-          logSampleResult({
-            content: input,
-            tokens,
-            strings,
-            tokenizerStats: tokenizer.stats,
-          });
+          logTokens(tokens, strings);
         } catch (error) {
           console.log("Error:", error);
         }
@@ -43,4 +35,15 @@ export function promptLoop(lattice: Lattice) {
   };
 
   promptUser();
+}
+
+export function logTokens(ids: bigint[], strings: string[]) {
+  // Create object with strings as keys and tokens as values
+  const tokenTable = strings.reduce((acc, str, i) => {
+    acc[`tkn:${ids[i]}`] = str;
+    return acc;
+  }, {} as Record<string, string>);
+
+  console.table([tokenTable]);
+  console.log("");
 }

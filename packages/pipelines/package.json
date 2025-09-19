@@ -1,0 +1,19 @@
+{
+  "name": "@tkn/pipelines",
+  "version": "0.1.0-beta.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "dependencies": {
+    "@tkn/sequencer": "workspace:*",
+    "@tkn/lattice": "workspace:*",
+    "lru-cache": "^11.2.1"
+  }
+}

@@ -9,18 +9,13 @@
     }
   },
   "scripts": {
-    "eval:cross-lingual": "bun run src/cross-lingual/eval.ts",
     "eval:english-small": "bun run src/english/small/eval.ts",
-    "eval:english-medium": "bun run src/english/medium/eval.ts",
-    "eval:english-large": "bun run src/english/large/eval.ts",
-    "eval:performance": "bun run src/performance/eval.ts",
     "eval:interactive": "bun run src/interactive/eval.ts"
   },
   "devDependencies": {},
   "peerDependencies": {},
   "dependencies": {
-    "@tkn/tokenizer": "workspace:*",
-    "@tkn/lzs": "workspace:*",
-    "@tkn/serializers": "workspace:*"
+    "@tkn/pipelines": "workspace:*",
+    "@tkn/sequencer": "workspace:*"
   }
 }
